@@ -230,15 +230,14 @@ class Corpus:
                         syms.append((m.group(1), i + 1))
                         break
             self.symbols[rel] = syms
-            if is_test_path(rel):
-                imps: list[str] = []
-                for line in text.splitlines():
-                    for pat in IMPORT_PATTERNS:
-                        m = pat.match(line)
-                        if m:
-                            imps.append(m.group(1))
-                            break
-                self.imports[rel] = imps
+            imps: list[str] = []
+            for line in text.splitlines():
+                for pat in IMPORT_PATTERNS:
+                    m = pat.match(line)
+                    if m:
+                        imps.append(m.group(1))
+                        break
+            self.imports[rel] = imps
         self._bm25_stats()
 
     def _bm25_stats(self):
@@ -286,7 +285,77 @@ class Corpus:
         return out
 
 
-def signal_rankings(corpus: Corpus, query: str, args) -> dict[str, list[str]]:
+def repomap_rank(corpus: "Corpus", qtokens: list[str], qidents: list[str],
+                 lexical_scores: dict[str, float], iterations: int = 30, d: float = 0.85) -> list[str]:
+    """RepoMap-style structural prior (Aider's idea, reimplemented stdlib-only):
+    PageRank over a file graph (importer -> imported, test -> production), with
+    query personalization playing the role of Aider's chat-file multiplier."""
+    files = list(corpus.files)
+    n = len(files)
+    if n == 0:
+        return []
+    stem_map: dict[str, list[str]] = defaultdict(list)
+    for f in files:
+        if not is_test_path(f):
+            stem_map[module_stem(f)].append(f)
+
+    edges: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for f in files:
+        counts: Counter = Counter()
+        for imp in corpus.imports.get(f, []):
+            stem = imp.rsplit("/", 1)[-1].split(".")[0]
+            for t in stem_map.get(stem, []):
+                if t != f:
+                    counts[t] += 1
+        if is_test_path(f):
+            for imp in corpus.imports.get(f, []):
+                stem = imp.rsplit("/", 1)[-1].split(".")[0]
+                for t in stem_map.get(stem, []):
+                    counts[t] += 0  # test->prod edges already added below
+        else:
+            for t in corpus.tests_of(f):
+                counts[t] += 1  # production hands mass to its tests
+        for t, c in counts.items():
+            if c:
+                edges[f][t] += math.sqrt(c)
+
+    # personalization: query-mentioned symbols/paths/lexical hits (the "chat" analog)
+    pers: dict[str, float] = defaultdict(float)
+    sym_hits = set()
+    for rel, syms in corpus.symbols.items():
+        names = {s.lower() for s, _ in syms}
+        if any(q.lower() in names for q in qidents):
+            sym_hits.add(rel)
+    for rel in sym_hits:
+        pers[rel] += 3.0
+    for rel, s in sorted(lexical_scores.items(), key=lambda kv: -kv[1])[:10]:
+        pers[rel] += 2.0
+    for rel in files:
+        segs = tokenize(rel.replace("/", " "))
+        if any(t in segs for t in set(qtokens)):
+            pers[rel] += 1.0
+
+    rank = {f: 1.0 / n for f in files}
+    pers_total = sum(pers.values()) or 1.0
+    for _ in range(iterations):
+        dangling = sum(rank[f] for f in files if f not in edges or not edges[f])
+        new = {}
+        for f in files:
+            base = (1 - d) * (pers.get(f, 0.0) / pers_total if pers else 1.0 / n)
+            base += d * dangling / n
+            new[f] = base
+        for src, dsts in edges.items():
+            total = sum(dsts.values())
+            if not total or rank[src] == 0.0:
+                continue
+            share = rank[src]
+            for dst, w in dsts.items():
+                new[dst] += d * share * (w / total)
+        rank = new
+    return sorted(files, key=lambda f: -rank[f])
+
+
+def signal_rankings(corpus: "Corpus", query: str, args) -> dict[str, list[str]]:
     qtokens = tokenize(query)
     qidents = [t for t in dict.fromkeys(
         raw for raw in TOKEN_RE.findall(query) if len(raw) >= 4 and any(c.isalpha() for c in raw))]
@@ -338,21 +407,24 @@ def signal_rankings(corpus: Corpus, query: str, args) -> dict[str, list[str]]:
                 rec[f] += 1.0 / math.log(2 + age / 6)
         history = sorted(rec.items(), key=lambda kv: -kv[1])
 
+    repomap = repomap_rank(corpus, qtokens, qidents, dict(lexical))
+
     return {"lexical": [r for r, _ in lexical], "path": [r for r, _ in path],
             "symbol": [r for r, _ in symbol], "test": [r for r, _ in testrel],
             "history": [r for r, _ in history],
+            "repomap": repomap,
             "cognition": list(corpus.cognition.keys()) if corpus.cognition else []}
 
 
 TASK_PRIORS = {
-    "explore":        {"cognition": 1.5, "path": 1.2, "graph": 1.0},
-    "code2test":      {"test": 1.5, "symbol": 1.2, "lexical": 1.0},
-    "comment2context":{"symbol": 1.4, "path": 1.0, "lexical": 0.8},
-    "trace2code":     {"lexical": 1.5, "history": 1.2, "symbol": 1.0},
-    "edit2ripple":    {"graph": 1.5, "test": 1.2, "symbol": 1.0},
-    "issue2code":     {"lexical": 1.2, "symbol": 1.2, "cognition": 1.0},
-    "review":         {"graph": 1.2, "history": 1.0, "symbol": 1.0},
-    "bug_hunt":       {"history": 1.5, "lexical": 1.0, "test": 1.0},
+    "explore":        {"cognition": 1.5, "path": 1.2, "graph": 1.0, "repomap": 1.2},
+    "code2test":      {"test": 1.5, "symbol": 1.2, "lexical": 1.0, "repomap": 0.7},
+    "comment2context":{"symbol": 1.4, "path": 1.0, "lexical": 0.8, "repomap": 0.8},
+    "trace2code":     {"lexical": 1.5, "history": 1.2, "symbol": 1.0, "repomap": 0.8},
+    "edit2ripple":    {"graph": 1.5, "test": 1.2, "symbol": 1.0, "repomap": 0.8},
+    "issue2code":     {"lexical": 1.2, "symbol": 1.2, "cognition": 1.0, "repomap": 1.0},
+    "review":         {"graph": 1.2, "history": 1.0, "symbol": 1.0, "repomap": 1.0},
+    "bug_hunt":       {"history": 1.5, "lexical": 1.0, "test": 1.0, "repomap": 0.8},
 }
 
 

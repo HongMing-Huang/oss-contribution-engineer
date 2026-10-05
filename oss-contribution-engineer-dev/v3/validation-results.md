@@ -87,4 +87,90 @@ packer now skips files that cannot fit even alone; fd trace2code BCY@8k went 0 �
   locally); the alignment check degrades honestly to `unverified` when baseline digests
   are absent.
 - Embedding / Language-Server signals remain pluggable stubs (no model deps by design);
-  the eval's embedding arm therefore does not run here.
+  the eval's embedding arm therefore does not run here — recorded as
+  **UNAVAILABLE (documented)**, per the ablation requirement, alongside the four
+  runnable arms.
+
+## 7. Five-arm ablation matrix (RepoMap arm added; 2026-10-05)
+
+`retrieval_router.py` gained a `repomap` signal family: PageRank (power iteration,
+stdlib) over the file graph — importer→imported edges plus production→tests edges —
+with query personalization (symbol hits ×3, top-10 lexical ×2, path hits ×1) playing
+Aider's chat-file multiplier role. `Corpus` now parses imports for all files (previously
+test files only — a prerequisite for the graph). Results (`--top-k 5,10`, BCY@8k,
+saved under `v3/eval/results/`):
+
+| Repo | Arm | MRR | Recall@5 | BCY@8k |
+|---|---|---|---|---|
+| click | lexical only | **0.625** | **0.875** | **0.875** |
+| click | RepoMap only | 0.252 | 0.750 | 0.250 |
+| click | symbol+test only | 0.250 | 0.250 | 0.250 |
+| click | hybrid | 0.411 | 0.625 | 0.625 |
+| fd | lexical only | 0.390 | 0.625 | **0.250** |
+| fd | RepoMap only | 0.400 | 0.625 | 0.000 |
+| fd | symbol+test only | 0.333 | 0.625 | 0.000 |
+| fd | hybrid | **0.438** | 0.625 | 0.000 |
+| both | embedding only | UNAVAILABLE (documented; pluggable arm, no model dependency) | | |
+
+Findings: lexical wins click outright; hybrid wins fd MRR. The RepoMap arm surfaced the
+import hub (`tests/testenv/mod.rs` #1 on fd) — and **adding it to the fd hybrid
+regressed BCY@8k to 0.000**: hub files pack before gold under greedy first-fit packing.
+Recorded as a measurable RepoMap hub risk and a routing-policy lesson (hub penalty for
+trace2code-style tasks), deliberately not tuned away post-hoc.
+
+## 8. End-to-end comparison — with vs without V3 context acquisition
+
+Protocol per references/retrieval-evaluation.md, reusing V2 evaluation scenarios.
+Two tasks, two arms each; all commands really executed 2026-10-05. Arm "V2 path" =
+V2 acquisition (recon + whole-file reads, no router/pack/receipt). Arm "V3 path" =
+goal_compiler → retrieval_router → context_planner (plan+pack) → budget_governor →
+cognition_receipt, then identical V2 gates (RED→GREEN, scope audit, adversarial review).
+
+### Task A — fixture patch task (divide-fixture; V2 eval scenario 3 reused)
+
+| Dimension | V2 path | V3 path |
+|---|---|---|
+| Root-cause accuracy | correct (calc.py:divide) — after reading all 4 files | correct — router ranked calc.py #1, pack span `divide 5-8` |
+| Regression-test quality | RED gate earlier caught a dead test; final test discriminating | identical (same test, same gates) |
+| Patch scope | 2 files (+1/−1 prod, +9 test), WITHIN_SCOPE | identical diff |
+| Patch correctness | GREEN + full suite PASS (witnessed) | identical |
+| Validation success | INCOMPLETE (integration UNAVAILABLE, visible) | identical |
+| Maintainer-quality review | adversarial checklist run; PR draft sections covered | identical + receipt/pack provenance attached |
+| Context cost | whole files (fixture too small to differentiate) | **pack = 80 est. tokens** (2 spans) |
+
+Interpretation (honest): on a tiny fixture the patch dimensions are identical — both
+arms pass the same V2 gates, and V3 claims no patch-quality magic. V3's measurable
+differences are process artifacts (goal contract, pack provenance, receipt) and scale
+(see Task B).
+
+### Task B — real-repo acquisition task (click, "locate write_usage hyphen breaking", READ_ONLY)
+
+Gold: `src/click/formatting.py`, `def write_usage` at line 158 (grep-verified).
+
+| Metric | V2 path (naive grep → whole-file reads) | V3 path (route → pack) |
+|---|---|---|
+| Exploration steps | 2 (grep; read both hit files whole) | 4 (compile, route, plan, pack) |
+| Est. tokens delivered | **40,745** (formatting.py 2,611 + core.py 38,134 — core.py entirely unnecessary for the defect span) | **460** (one span) |
+| Gold file reached | yes | yes (router rank #2; test file #1) |
+| Gold span covered | yes, but only because the whole file was read | **yes — exactly `write_usage 158-203`** |
+| Noise delivered | 38k tokens of unrelated core.py | none (excluded candidates listed) |
+| Source identity binding | none | sha256 digest per span + receipt |
+
+**Ratio: ~89× less delivered context with precise gold-span coverage.**
+
+### Defects found by the E2E run (fixed; the reason this comparison is required)
+
+1. Head-only span scan: the packer sampled only the first three file-top symbols, so
+   `write_usage` (line 158) could never be packed → full-file symbol scan with
+   name-preference selection now.
+2. Separator-order tokenization: "usage-line" was stripped to "usageline" before
+   splitting, making it unmatchable against "write_usage" → split on separators first.
+3. RepoMap hub regression on fd BCY (see § 7) — recorded, not patched away.
+
+### Conclusion
+
+Better context ≠ more context. The V3 path matched every V2 patch-quality dimension
+(identical gates) while cutting delivered context by ~89× on a real repository and
+making gold-span coverage, provenance, and drift binding structural. The one measured
+cost: the RepoMap prior needs task-aware hub penalties — an open routing-policy item,
+recorded with data.

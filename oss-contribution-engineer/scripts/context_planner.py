@@ -116,8 +116,10 @@ def top_k_len(cands: list, cap: int) -> int:
     return min(len(cands), cap)
 
 
-def symbol_spans(text: str, limit: int = 3) -> list[tuple[str, int, int]]:
-    """Return up to `limit` top-level (name, start, end) spans."""
+def symbol_spans(text: str) -> list[tuple[str, int, int]]:
+    """Return ALL top-level (name, start, end) spans, in file order. Selection
+    (matching vs first-N) is the caller's policy — a head-only scan missed symbols
+    deeper in the file (found by the end-to-end comparison)."""
     lines = text.splitlines()
     starts = []
     for i, line in enumerate(lines):
@@ -127,11 +129,9 @@ def symbol_spans(text: str, limit: int = 3) -> list[tuple[str, int, int]]:
                 starts.append((m.group(1), i))
                 break
     spans = []
-    for j, (name, start) in enumerate(starts[:limit * 2]):
+    for j, (name, start) in enumerate(starts):
         end = starts[j + 1][1] - 1 if j + 1 < len(starts) else min(len(lines) - 1, start + 120)
         spans.append((name, start + 1, end + 1))
-        if len(spans) >= limit:
-            break
     return spans
 
 
@@ -140,8 +140,18 @@ def cmd_pack(repo: Path, goal_path: str, plan_path: str) -> int:
     plan = load_json(plan_path)
     scope_tokens = [s["path"] for s in goal.get("scope", [])]
     qtokens = set()
-    for s in (goal.get("intent", "") + " " + " ".join(goal.get("likely_domains", []))).lower().split():
-        qtokens.add(re.sub(r"[^a-z0-9_]", "", s))
+    for raw in (goal.get("intent", "") + " " + " ".join(goal.get("likely_domains", []))).lower().split():
+        # split on separators FIRST (before stripping) so "usage-line" yields
+        # usage + line; stripping first glued them into an unmatchable token
+        for w in re.findall(r"[a-z0-9]+", raw):
+            if len(w) >= 3:
+                qtokens.add(w)
+            for part in re.split(r"[_]+", w):
+                if len(part) >= 3:
+                    qtokens.add(part)
+            for chunk in re.findall(r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+", w):
+                if len(chunk) >= 3:
+                    qtokens.add(chunk.lower())
     src_budget = plan["token_allocation"]["source"]
     test_budget = plan["token_allocation"]["test"]
 
@@ -165,9 +175,10 @@ def cmd_pack(repo: Path, goal_path: str, plan_path: str) -> int:
                 used_test += est
             continue
         if used_src < src_budget:
-            spans = symbol_spans(text)
-            chosen = [(n, a, b2) for (n, a, b2) in spans
-                      if any(t in n.lower() for t in qtokens)] or spans
+            all_spans = symbol_spans(text)
+            matched = [(n, a, b2) for (n, a, b2) in all_spans
+                       if any(t and t in n.lower() for t in qtokens)]
+            chosen = matched or all_spans
             delivered = []
             for (name, a, b2) in chosen[:3]:
                 span_tokens = max(1, (b2 - a + 1) * 40 // 4)

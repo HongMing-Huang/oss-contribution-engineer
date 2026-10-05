@@ -1,0 +1,1 @@
+repomap-only     MRR=0.252 R@5=0.750 BCY@8k=0.250
