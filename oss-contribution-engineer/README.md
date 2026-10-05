@@ -79,6 +79,13 @@ DROPPED_OR_STALE, and in-flight WAITING_FOR_REVIEW / CHANGES_REQUESTED /
 READY_FOR_REREVIEW. "PR opened" is not success, and `closed=true` is never reported as
 a merge.
 
+**Large repositories**: context is acquired, never bulk-loaded — workflow-aware
+retrieval routing (lexical / symbol / test-relations / history / RepoMap-style
+PageRank / bounded graph expansion, fused per workflow) feeds a no-regret packer that
+lets structural candidates fill only the slots direct evidence leaves open. Every
+packed span carries provenance and a digest; routing regret is measured, and an
+extra signal is rejected when it makes the pack worse.
+
 ## The state machine
 
 ```

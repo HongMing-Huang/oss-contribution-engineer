@@ -417,7 +417,8 @@ ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/context_planner.py | Task Context Plan + bounded Context Pack of symbol spans with digests | none |
 | scripts/budget_governor.py | token budget accounting; soft/hard thresholds; ordered remediation actions | none |
 | scripts/cognition_receipt.py | Task Cognition Receipt: open/record-read/verify (drift detection)/close/reconstruct | none |
-| scripts/retrieval_eval.py | Recall@K, MRR, BCY@B, precision, line metrics; per-task-type + signal ablation | none |
+| scripts/retrieval_eval.py | Recall@K, MRR, BCY@B, precision, line metrics; per-task-type + signal ablation; ROUTING REGRET diagnostic | none |
+| scripts/build_arb_slice.py | freeze a small Agent Retrieval Bench slice into task JSONL (records base SHAs; eval tooling) | none — slice source fetched separately |
 
 Scripts are deterministic collectors: they report what is on disk or returned by the
 platform API, and state when data is incomplete. They never interpret semantics.
