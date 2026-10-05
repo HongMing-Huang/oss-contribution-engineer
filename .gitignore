@@ -1,5 +1,7 @@
 # security-hook session state (not part of the skill)
 .mimosa/
+.video_agent/
+.zcodeignore
 # python
 __pycache__/
 *.pyc

@@ -124,9 +124,15 @@ text. references/ai-assisted-development.md governs disclosure and ownership.
 ```
 DISCOVER → RECON → CANDIDATE → DEDUPLICATE → PROVE → RED → PATCH → GREEN
         → REGRESSION → CONTRIBUTOR_UNDERSTANDING → REVIEW → PR_READY
-        → IN_REVIEW → UPSTREAM_RESOLVED      (after publication, REMOTE_WRITE)
-                    ↘ IN_REVIEW → PATCH …    (review change re-enters at PATCH)
+        → IN_REVIEW ⇄ PATCH …            (published with REMOTE_WRITE; review iterates)
+        → terminal: MERGED | CLOSED_NOT_MERGED | SUPERSEDED | WITHDRAWN | DROPPED_OR_STALE
+        in-flight: WAITING_FOR_REVIEW | CHANGES_REQUESTED | READY_FOR_REREVIEW
 ```
+
+**PR_READY and "PR opened" are not success.** A contribution succeeds only at MERGED;
+every other ending is a distinct, honestly-named outcome. `closed=true` alone is never
+success — a rejected PR is also closed. Classify from captured PR state with
+`scripts/upstream_state.py` (below), never from the agent's own impression.
 
 Entry and exit gates — every transition must satisfy its criteria:
 
@@ -143,15 +149,37 @@ Entry and exit gates — every transition must satisfy its criteria:
 | REGRESSION → CONTRIBUTOR_UNDERSTANDING | Change Walkthrough drafted from the real diff, current source (file:line), and the actual tests; explain-back questions prepared; evidence not stale (refreshed if the patch changed) |
 | CONTRIBUTOR_UNDERSTANDING → REVIEW | explain-back attempted and its status recorded — UNDERSTOOD (explicit human confirmation), DEFERRED (human chose to proceed without it), or INCOMPLETE (gaps named, teaching offered); the agent never marks UNDERSTOOD itself |
 | REVIEW → PR_READY | adversarial diff review performed; maintainer-perspective simulation answered from the actual patch; no unresolved correctness issues; testing evidence and untested areas recorded; PR draft problem-first |
-| PR_READY → IN_REVIEW | PR published with explicit REMOTE_WRITE; iteration baseline recorded (revision, validations run) |
-| IN_REVIEW → PATCH | accepted review comment requires a code change; concern classified and explained to the contributor first |
-| IN_REVIEW → UPSTREAM_RESOLVED | merged, closed, or withdrawn; final iteration summary recorded |
+| PR_READY → IN_REVIEW | PR published with explicit REMOTE_WRITE; PR state captured (upstream_state.py capture commands) and classified; iteration baseline recorded (revision, validations run) |
+| IN_REVIEW → PATCH | accepted review comment requires a code/test change; concern classified and explained to the contributor via the 5-part review block; PATCH PLAN updated first |
+| IN_REVIEW → READY_FOR_REREVIEW | review fixes committed AND revalidation evidence recorded at the new HEAD AND re-review explicitly signaled (re-request / PTAL per repo convention) — each fact from captured state, not self-report |
+| IN_REVIEW → terminal outcome | upstream_state.py classification recorded from captured PR JSON: MERGED, CLOSED_NOT_MERGED, SUPERSEDED, WITHDRAWN, or DROPPED_OR_STALE; final iteration summary written; closed-without-merge is never reported as success |
 
 Gate failure is not failure of the run — it is a conclusion (INVALID, ALREADY_FIXED,
 DUPLICATE, UNCONFIRMED, DESIGN_QUESTION, TOO_LARGE). Record which gate stopped the run
 and why. Never skip a gate because you feel confident. If REVIEW sends the patch back to
 PATCH, the Change Walkthrough and the understanding status go stale — refresh both after
 the new GREEN.
+
+## Upstream lifecycle (IN_REVIEW) — evidence-bound
+
+The run does not end at PR_READY. The upstream state comes from captured platform data,
+never from the agent's own report ("review handled", "CI passed", "ready for rereview"
+are meaningless without a capture):
+
+```bash
+python3 <skill-dir>/scripts/upstream_state.py commands --slug OWNER/REPO --pr 123   # prints capture commands
+python3 <skill-dir>/scripts/upstream_state.py classify --pr-file pr.json \
+    --reviews-file reviews.json --timeline-file timeline.json --local-repo <repo>
+```
+
+The classifier outputs exactly one lifecycle status with the facts behind it (head SHA,
+state, merge flag, latest review, commits after review, re-review signal) and never
+resolves an ambiguous capture toward a flattering status. WAITING_FOR_REVIEW vs
+CHANGES_REQUESTED vs READY_FOR_REREVIEW differ by *evidence of the contributor's own
+actions*: fixes pushed, and readiness explicitly signaled. Inactivity, rejection,
+supersession, withdrawal and merge are different outcomes — Kubernetes closes 90-day
+idle PRs, Git discards topics with unaddressed comments after four weeks, and none of
+those is a merge.
 
 ## Contributor understanding (CONTRIBUTOR_UNDERSTANDING)
 
@@ -236,14 +264,20 @@ hand-written:
 
 ```bash
 python3 <skill-dir>/scripts/evidence_manifest.py <repo> record --purpose "RED: regression test fails on unmodified upstream" --expect-fail -- <test-command...>
-python3 <skill-dir>/scripts/evidence_manifest.py <repo> record --purpose "GREEN: regression test after fix" -- <test-command...>
+python3 <skill-dir>/scripts/evidence_manifest.py <repo> record --purpose "GREEN: regression test after fix" --head-bound -- <test-command...>
 python3 <skill-dir>/scripts/evidence_manifest.py <repo> record-skip --purpose "integration suite" --status SKIPPED --reason "requires docker; not available"
 python3 <skill-dir>/scripts/validation_report.py <repo>   # renders the Validation Report table
 ```
 
 `--expect-fail` marks RED proofs: a non-zero exit is the expected outcome and is not
 counted as a validation failure, while an unexpected exit 0 is recorded FAIL (the proof
-did not hold).
+did not hold). `--head-bound` marks evidence that certifies the code state it ran on
+(GREEN runs, suites, lint, build): when HEAD moves — a review-driven change, a rebase —
+the Validation Report marks those entries **STALE** (exit 5) and lists the files changed
+since, so a PASS can never be borrowed for code it did not run on. RED proofs and
+pre-fix baselines are recorded without the flag; they are supposed to describe older
+code. Rule: after any post-GREEN change, rerun the affected levels and cite only the new
+records (references/testing-strategy.md § Stale validation).
 
 Layered verification, cheapest first (full ladder and test-quality review:
 references/testing-strategy.md): baseline → reproducer → RED/GREEN regression → neighbor
@@ -278,10 +312,11 @@ AFTER PATCH     RESULT: <GREEN / back-to-PATCH / stopped, one line>
                 WHAT DID NOT CHANGE: <explicit>
                 REMAINING RISK: <what could still regress>
 
-DURING REVIEW   REVIEWER CONCERN: <paraphrased, categorized>
-                INTERPRETATION: <what it actually challenges>
-                EVIDENCE: <what was re-checked, refs>
-                ACTION: <modify / justify / ask — and the response draft>
+DURING REVIEW   REVIEWER CONCERN: <paraphrased, categorized — what worries the reviewer>
+                CODE CONTEXT: <which code/design assumption the comment refers to>
+                ASSESSMENT: <agree / partially agree / disagree — and why>
+                EVIDENCE: <what source, test, history or contract was re-checked, refs>
+                ACTION: <what will change, or why no change is appropriate — response draft>
 ```
 
 ## Scope audit and diff budget
@@ -336,11 +371,16 @@ assets/review-report.md from the adversarial pass. Prepare, never publish, the P
 
 A published PR receiving review comments does not end the run. Classify each concern
 (correctness, design, scope, test coverage, compatibility, style, documentation,
-maintainability, question), inspect the relevant source and evidence, explain the
-concern to the contributor, then either modify (re-enter PATCH; affected validation is
-stale and must be re-run) or prepare a respectful evidence-backed response — never
-automatic agreement. Each revision gets an iteration summary so reviewers never
-reconstruct prior discussion. Full protocol: references/review-response.md; worksheet:
+maintainability, question), inspect the relevant source and evidence, then explain it to
+the contributor with the 5-part review block — the contributor must understand the
+assessment before any upstream reply is drafted. Then either modify (re-enter PATCH;
+affected head-bound evidence is STALE and must be re-run and re-recorded) or prepare a
+respectful evidence-backed response — never automatic agreement, and never a blind
+rewrite: a design objection is resolved in discussion first (Git: defend or adapt the
+design before re-implementing). Push fixes as new commits (not squashed) so reviewers
+can diff the revision; signal readiness explicitly (re-request / PTAL) for
+READY_FOR_REREVIEW; classify the terminal outcome with upstream_state.py — MERGED is the
+only success. Full protocol: references/review-response.md; worksheet:
 assets/review-response.md.
 
 ## Output artifacts
@@ -369,10 +409,11 @@ ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/contribution_rules_scan.py | locate repo-local instruction files, excerpt rule-relevant lines | none |
 | scripts/duplicate_work_scan.py | prints gh capture commands, then aggregates captured issue/PR JSON (timeline cross-references, referencing commits) | none — capture via gh or a platform tool |
 | scripts/diff_scope_check.py | diff vs intended scope; drift, lockfile, formatting-only flags; budget check | none |
-| scripts/evidence_manifest.py | witnessed command execution → tamper-evident JSONL manifest | none |
-| scripts/validation_report.py | manifest → Validation Report table; never collapses skips into PASS | none |
+| scripts/evidence_manifest.py | witnessed command execution → tamper-evident JSONL manifest; `--head-bound` ties PASS to the HEAD it ran on | none |
+| scripts/validation_report.py | manifest → Validation Report table; never collapses skips into PASS; marks head-bound evidence STALE after HEAD moves (exit 5) | none |
+| scripts/upstream_state.py | prints PR-state capture commands, then classifies captured PR/reviews/timeline JSON into the 8 lifecycle outcomes (MERGED is the only success; closed≠merged never resolves to success) | none — capture via gh or a platform tool |
 | scripts/goal_compiler.py | Goal Contract + Goal Card; done_when observability gate; hypothesis records | none |
-| scripts/retrieval_router.py | hybrid retrieval (lexical/path/symbol/test/history/cognition/graph), RRF fusion, abstention report; AOCI detection + alignment | none |
+| scripts/retrieval_router.py | hybrid retrieval (lexical/path/symbol/test/history/cognition/graph/repomap-PageRank), RRF fusion, abstention report; AOCI detection + alignment | none |
 | scripts/context_planner.py | Task Context Plan + bounded Context Pack of symbol spans with digests | none |
 | scripts/budget_governor.py | token budget accounting; soft/hard thresholds; ordered remediation actions | none |
 | scripts/cognition_receipt.py | Task Cognition Receipt: open/record-read/verify (drift detection)/close/reconstruct | none |

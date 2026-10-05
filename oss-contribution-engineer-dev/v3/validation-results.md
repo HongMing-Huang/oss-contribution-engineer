@@ -34,16 +34,22 @@ unchanged: nothing here without a recorded execution. Complements
   the walker (`.` treated as hidden — nothing scanned); unbound `age` variable on
   shallow clones (git log with no sha line); walrus-in-comprehension SyntaxError.
 
-## 4. Retrieval evaluation — executed (real numbers; ablation)
+## 4. Retrieval evaluation — first run (real numbers; historical)
+
+> **Historical note**: this was the three-arm run BEFORE the `repomap` signal family
+> existed. Its "hybrid" arm therefore differs from § 7's hybrid (which includes
+> repomap and shifts numbers: click hybrid 0.300→0.411, fd 0.458→0.438, fd BCY
+> 0.250→0.000). § 7 is the current five-arm matrix; this section is kept as the
+> routing-policy record of what changed when the structural prior was added.
 
 click (4 tasks) and fd (4 tasks), gold verified by grep/reproduction before use:
 
 | Repo | Arm | MRR | Recall@5 | BCY@8k |
 |---|---|---|---|---|
-| click | hybrid | 0.300 | 0.625 | 0.375 |
+| click | hybrid (pre-repomap) | 0.300 | 0.625 | 0.375 |
 | click | lexical+path | **0.590** | 0.625 | 0.375 |
 | click | symbol+test | 0.250 | 0.250 | 0.250 |
-| fd | hybrid | **0.458** | 0.625 | 0.250 |
+| fd | hybrid (pre-repomap) | **0.458** | 0.625 | 0.250 |
 | fd | lexical+path | 0.265 | 0.625 | 0.250 |
 
 Per-task-type (hybrid): code2test Recall@5 = **1.0 on both repos**; fd trace2code
@@ -121,10 +127,18 @@ trace2code-style tasks), deliberately not tuned away post-hoc.
 ## 8. End-to-end comparison — with vs without V3 context acquisition
 
 Protocol per references/retrieval-evaluation.md, reusing V2 evaluation scenarios.
-Two tasks, two arms each; all commands really executed 2026-10-05. Arm "V2 path" =
-V2 acquisition (recon + whole-file reads, no router/pack/receipt). Arm "V3 path" =
-goal_compiler → retrieval_router → context_planner (plan+pack) → budget_governor →
-cognition_receipt, then identical V2 gates (RED→GREEN, scope audit, adversarial review).
+Two tasks, two arms each. **What was re-executed on 2026-10-05**: all V3-arm
+acquisition steps (goal compile, route, plan, pack, governor, receipt) on both tasks,
+and the V2-arm naive acquisition on Task B (grep + whole-file token accounting). **What
+is reused, not re-run**: Task A's patch-phase rows (RED→GREEN, suite, scope audit) cite
+the witnessed evidence recorded during the 2026-10-03 drill
+(`../validation-results.md` § 3) — the patch gates are arm-independent (both arms run
+the same V2 machinery after acquisition), so re-running the identical commands twice
+would reproduce identical artifacts; the rows are marked "identical (same gates)" on
+that basis, not on fresh dual execution. Arm "V2 path" = V2 acquisition (recon +
+whole-file reads, no router/pack/receipt). Arm "V3 path" = goal_compiler →
+retrieval_router → context_planner (plan+pack) → budget_governor → cognition_receipt,
+then identical V2 gates.
 
 ### Task A — fixture patch task (divide-fixture; V2 eval scenario 3 reused)
 
