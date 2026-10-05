@@ -41,14 +41,37 @@ regression test before reviewing.
 - Backward compatibility for pinned users of the project
 - Downstream packagers: does the change assume tooling or files beyond the repo?
 
+## Maintainer-perspective simulation (before PR_READY)
+
+After the falsification pass, run one adversarial review *as the maintainer who must
+live with this code*, answering from the actual patch — its diff, its tests, its
+evidence — not from a generic checklist. The questions are the ones this specific patch
+invites:
+
+- Why is this a real problem? (who is affected, what breaks today)
+- Why fix it here? (why this location in the execution/data flow)
+- Can the patch be smaller?
+- What contract proves the expected behavior?
+- What adjacent behavior can regress?
+- Why is this test sufficient? (would it fail if the bug returned?)
+- What was not tested?
+- Does this introduce maintenance cost a future maintainer will pay?
+
+Every answer must trace to evidence already produced (walkthrough, validation report,
+manifest artifacts); a question the patch cannot answer from evidence is a finding —
+fix the patch or record the honest limit. The simulation improves both the patch and
+the contributor's ability to defend it in real review.
+
 ## Verdicts
 
 - Unresolved correctness issue → back to PATCH (fix) or back to PROVE (if the root cause
   itself is now in doubt). Record which.
 - Only minor, debatable nits → record them in the Review Report; they may inform the PR
   description ("known trade-offs").
-- Clean → PR_READY after the Contributor Understanding Check (SKILL.md § gates;
-  ai-assisted-development.md has the 10 questions the human must answer).
+- Clean → PR_READY. The Contributor Understanding status was already recorded at the
+  CONTRIBUTOR_UNDERSTANDING gate (SKILL.md; assets/change-walkthrough.md;
+  ai-assisted-development.md has the explain-back questions the human must be able to
+  answer).
 
 Note what the review could NOT check (long-running behavior, production data shapes,
 other providers) so the PR description can carry the same caveat.

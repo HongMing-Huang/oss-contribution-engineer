@@ -31,17 +31,30 @@ design question instead.
 ## PR preparation
 
 - Small, self-contained, described so the first line alone tells the story (Google CL
-  description rules; assets/pull-request-template.md).
+  description rules; assets/pull-request-template.md). Problem before implementation —
+  the description must let a reviewer decide the change is worth merging before opening
+  the diff.
 - Follow the repository's PR template and commit conventions exactly (from recon).
 - Include changelog entries if the project requires them; note the issue with the
   project's preferred keyword ("Fixes #N" vs "Closes #N").
 - State what was tested and what was not, plainly. Overclaiming testing is worse than
   admitting limits — kernel reviewers and Git both call out unverified claims.
 - Choose reviewers via CODEOWNERS/MAINTAINERS rather than @-mentioning strangers.
-- Expect iteration: answer every review comment, or state explicitly why a suggestion
-  was not applied (LLVM treats unacknowledged feedback as blocking).
 - If the PR goes stale and you abandon it, say so and close it — abandoned work left
   open costs maintainers context-switching.
+
+## Responding to review
+
+- Answer every meaningful comment in the discussion — never let a push be the only
+  response (Git: "Reply-All" rule; LLVM treats unacknowledged feedback as blocking).
+- One revision note per round: what changed per concern, evidence, and what did not
+  change and why — the reviewer should never reconstruct prior discussion (Git
+  cover-letter rule: "give a summary of changes since the previous rounds"). Worksheet:
+  assets/review-response.md; protocol: references/review-response.md.
+- Max one new version per day (Git), batched and verified before resubmitting.
+- Disagreement is allowed and sometimes right: a respectful, evidence-backed "here is
+  why the current implementation stands" is a valid response — capitulation is not
+  required, silence never is.
 
 ## What never to do
 

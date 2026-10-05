@@ -9,10 +9,19 @@ for this; violating them gets submissions rejected without review.
 - "You are expected to understand and to be able to defend everything you submit"
   (kernel, generated-content.rst). If the human cannot explain the change, the skill's
   job is to help them review it, not to submit it anyway.
-- Before PR_READY, walk the human through the Contributor Understanding Check:
-  1. What was broken? 2. Who is affected? 3. How was it reproduced? 4. What invariant
-  was violated? 5. Why does the patch fix it? 6. Why is it minimal? 7. What tests prove
-  it? 8. What was NOT tested? 9. What could regress? 10. Which files changed and why?
+- At the CONTRIBUTOR_UNDERSTANDING stage, produce the Change Walkthrough
+  (assets/change-walkthrough.md) and run the **Explain-Back check** — a conversation,
+  not an exam. The human should be able to answer, in their own words:
+  1. What is the bug/problem?
+  2. How does the affected code currently work?
+  3. Why does the patch fix it?
+  4. Why did the test fail before the fix?
+  5. What is the main regression risk?
+- Incomplete understanding → explain the missing concept, show the relevant code path,
+  continue. One concept at a time. Record the outcome as UNDERSTOOD (only on the
+  human's explicit confirmation — the agent never claims it), DEFERRED, or INCOMPLETE
+  (gaps named). A DEFERRED or INCOMPLETE status never blocks reporting honestly, but
+  must never be laundered into "contributor understands".
 - AI-generated code is not accepted merely because CI is green.
 
 ## Legal certification

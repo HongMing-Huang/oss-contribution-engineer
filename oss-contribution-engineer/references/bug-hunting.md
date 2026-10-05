@@ -52,8 +52,12 @@ tests hiding contract changes.
 - If a candidate turns out to be intended behavior (git blame/comments/tests say so),
   record why and drop it. Do not "fix" intentional behavior that merely looks unusual.
 - Report candidates through the Candidate Report; the user decides whether to seek
-  maintainer input. For a NEW bug report, draft the issue text (concise: expected,
-  actual, repro, environment, versions) — posting it is REMOTE_WRITE.
+  maintainer input. For a NEW bug report, draft the issue with assets/issue-draft.md
+  (Problem / Reproduction / Expected / Actual / Impact / Evidence / Likely scope /
+  Open questions). If the bug is not sufficiently proven, the draft is framed as an
+  **UNCONFIRMED INVESTIGATION** — a question to maintainers, not a confident report —
+  or is not prepared at all. Static suspicion alone never becomes an issue. Posting
+  anything is REMOTE_WRITE.
 
 ## Anti-patterns
 

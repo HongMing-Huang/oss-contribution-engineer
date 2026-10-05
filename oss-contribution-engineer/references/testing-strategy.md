@@ -37,6 +37,19 @@ upstream; the test doesn't exercise the defect; the assumption about expected be
 wrong; the test path is wrong; the test is flaky. Investigate — do not adjust the test
 until it fails, and never weaken an existing test to manufacture RED.
 
+## Stale validation (any post-GREEN change)
+
+Evidence is tied to the code state it tested (each manifest entry records git HEAD).
+Any production or test change after GREEN — review-driven fix, rebase, rework — makes
+the affected evidence stale:
+
+- Re-run the affected levels and record them anew; if the fix or its regression test
+  changed, RED→GREEN discipline applies again (the new test must fail on the old code
+  for the intended reason).
+- Regenerate the Validation Report; never cite superseded artifacts as current.
+- Refresh the Change Walkthrough and re-check the understanding status if the change is
+  more than cosmetic (SKILL.md § Contributor understanding).
+
 ## Test quality review (the skill reviews tests, not just runs them)
 
 Before accepting a regression test, answer:

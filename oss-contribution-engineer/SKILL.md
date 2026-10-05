@@ -1,11 +1,12 @@
 ---
 name: oss-contribution-engineer
-description: Drive real, maintainer-respectful contributions to open-source repositories with a coding agent - repository recon, issue triage, proactive bug hunting, evidence-first investigation, RED-to-GREEN regression fixes, adversarial review, and PR preparation. Use when the user wants to contribute to an open-source repo, find a real issue to solve, check whether an issue is already claimed, investigate a bug before coding, find an unreported bug, review an open-source patch like a maintainer, or prepare a high-quality PR - or mentions "good first issue", "contribute upstream", or "fix this open-source bug". Enforces evidence before claims and reproduction before fixes; never treats "investigate" as permission to edit; never publishes remotely without explicit authorization. Not for ordinary local application development on private codebases.
+description: Drive real, maintainer-respectful open-source contributions with a coding agent - repository recon, issue triage, bug hunting, evidence-first investigation, RED-to-GREEN regression fixes, adversarial review, PR preparation, review-response support - scaled to large codebases via goal contracts, hybrid retrieval routing, and bounded context packs instead of loading the whole repository. Use when the user wants to contribute to an open-source repo, find a real issue, check whether an issue is already claimed, investigate a bug before coding, find an unreported bug, review a patch like a maintainer, prepare a high-quality PR, respond to PR review, or work in a large codebase - or mentions "good first issue", "contribute upstream", "fix this open-source bug", or "the maintainer asked for changes". Enforces evidence before claims and reproduction before fixes; never treats "investigate" as permission to edit; never publishes remotely without authorization. Not for ordinary local application development.
 license: MIT
 compatibility: Requires python3 and git on PATH. Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   philosophy: "AI may accelerate investigation, testing, implementation, and review, but it must never replace evidence, engineering judgment, or human responsibility."
+  context_law: "Cognition selects. Source proves. Tests verify. History explains."
 ---
 
 # Open-Source Contribution Engineer
@@ -26,7 +27,8 @@ them further where they conflict.
 
 1. **Evidence before claims.** Never assert a bug, a root cause, or a passing check
    without something you actually ran or read. Static reading alone is a hypothesis, not
-   a bug report.
+   a bug report — and static suspicion alone never becomes an Issue: unproven findings
+   are reported as UNCONFIRMED INVESTIGATION or not reported at all.
 2. **Never fabricate execution.** Record EXECUTED / PASS / FAIL / SKIPPED / UNAVAILABLE
    per command. "Tests pass" may only be written after the command ran and exited 0.
    Skipped work stays SKIPPED and is listed.
@@ -51,9 +53,15 @@ them further where they conflict.
    and stop; private reporting only; no exploit details in public artifacts.
 10. **The human owns the submission.** Never add sign-offs/certifications (DCO) on
     behalf of a human; never submit anything the human cannot personally explain and
-    defend; follow the repository's AI-disclosure policy.
+    defend; follow the repository's AI-disclosure policy. Never record that the human
+    understands a patch — understanding is confirmed by the human, or explicitly
+    deferred and recorded as deferred.
 11. **Local rules win.** CONTRIBUTING, AGENTS.md, CODEOWNERS, PR templates, commit
     conventions, and AI policies of the target repository override this skill's defaults.
+12. **Never load a large repository into context.** Understanding is hierarchical
+    (L0–L4) and acquired adaptively: cognition selects, source proves, tests verify,
+    history explains. No summary, embedding, graph, or memory substitutes for reading
+    the current source of anything you will modify.
 
 ## Permission model
 
@@ -65,6 +73,28 @@ them further where they conflict.
 
 Anything beyond READ_ONLY must be visible to the user as a decision, not a side effect.
 Before any WORKTREE_EDIT on a fresh repository, run recon (below) first.
+
+## Goal Intelligence
+
+Compile every non-trivial task into a **Goal Contract** — what the user wants, kept
+strictly separate from what you guess will satisfy it. An implementation hypothesis is
+never the goal; hypotheses live in `goal_compiler.py <repo> hypotheses ...` records,
+outside the immutable contract.
+
+```bash
+python3 <skill-dir>/scripts/goal_compiler.py <repo> compile --intent "..." \
+  --done-when "run: python3 -m pytest -q" --done-when "Investigation Report concludes CONFIRMED" \
+  --repository <slug> --domains <guesses> --authority read
+```
+
+Rules: `scope`/`domains`/`unknowns` are recorded as guesses; `done_when` needs at least
+one observable acceptance item (`run:`/`test`/`artifact`/`maintainer reply`) or the
+compiler rejects the contract; `remote_write` is never compiled in. The compiler emits
+the compact **Goal Card** (GOAL/DONE/SCOPE/UNKNOWN/NEXT/AUTH); investigation reports in
+the FOUND/EVIDENCE/IMPACT/NEXT blocks of "Progress communication" below; PATCH INTENT is
+the block form of the PATCH PLAN; closure uses RESULT/PROOF/WHAT CHANGED/REMAINING RISK.
+Full spec: references/goal-contracts.md. After context compaction, reconstruct from the
+Task Cognition Receipt and open with `RESULT RECONSTRUCTED` — never recite memory.
 
 ## Operating modes
 
@@ -80,9 +110,12 @@ Pick the mode from the user's request; say which mode you are in.
 | 6 Adversarial Review | "review my patch like a maintainer" or post-fix | references/code-review.md |
 | 7 PR Preparation | packaging a validated change | assets/pull-request-template.md |
 | 8 Learning | "explain this architecture" | references/repository-recon.md (light) |
+| 9 Review Response | an open PR received review comments | references/review-response.md |
 
 Modes 2–4 are always READ_ONLY. Mode 3 ends at CANDIDATE; a patch requires the user to
-ask for Mode 5. Also load references/contribution-doctrine.md once per repository to
+ask for Mode 5. Mode 9 analyzes review READ_ONLY, re-enters the patch path (Mode 5
+gates) only when a decided change requires code, and drafts responses — posting anything
+is REMOTE_WRITE. Also load references/contribution-doctrine.md once per repository to
 anchor judgment, and references/maintainer-etiquette.md before writing any comment or PR
 text. references/ai-assisted-development.md governs disclosure and ownership.
 
@@ -90,27 +123,56 @@ text. references/ai-assisted-development.md governs disclosure and ownership.
 
 ```
 DISCOVER → RECON → CANDIDATE → DEDUPLICATE → PROVE → RED → PATCH → GREEN
-        → REGRESSION → REVIEW → PR_READY
+        → REGRESSION → CONTRIBUTOR_UNDERSTANDING → REVIEW → PR_READY
+        → IN_REVIEW → UPSTREAM_RESOLVED      (after publication, REMOTE_WRITE)
+                    ↘ IN_REVIEW → PATCH …    (review change re-enters at PATCH)
 ```
 
 Entry and exit gates — every transition must satisfy its criteria:
 
 | Transition | Gate (all required) |
 |------------|---------------------|
-| DISCOVER → RECON | target repository chosen; mode/permissions agreed |
-| RECON → CANDIDATE | Repository Contribution Profile exists; local rules noted; candidate area named |
+| DISCOVER → RECON | target repository chosen; mode/permissions agreed; Goal Contract compiled (goal_compiler.py) |
+| RECON → CANDIDATE | Repository Contribution Profile exists; local rules noted; cognition backend selected with alignment recorded; candidate area named |
 | CANDIDATE → DEDUPLICATE | concrete suspected behavior; affected subsystem; source of expected behavior |
 | DEDUPLICATE → PROVE | issue search, PR search, assignment/comment inspection, recent-commit inspection recorded; classification assigned (AVAILABLE, CLAIMED, PR_EXISTS, DESIGN_BLOCKED, NEEDS_MAINTAINER_DECISION, INVALID, STALE, TOO_LARGE, TOO_TRIVIAL, GOOD_CANDIDATE) |
 | PROVE → RED | reproducer demonstrates expected vs actual; Evidence Record complete — otherwise STOP with UNCONFIRMED |
 | RED → PATCH | regression test fails on unmodified upstream code for the intended reason; RED output stored |
 | PATCH → GREEN | smallest reasonable implementation; matches PATCH PLAN; no unrelated changes |
 | GREEN → REGRESSION | focused regression test passes; GREEN output stored |
-| REGRESSION → REVIEW | neighbor tests, package tests, lint/format/typecheck, build executed or explicitly recorded SKIPPED/UNAVAILABLE |
-| REVIEW → PR_READY | adversarial diff review performed; no unresolved correctness issues; testing evidence and untested areas recorded; Contributor Understanding Check prepared for the human |
+| REGRESSION → CONTRIBUTOR_UNDERSTANDING | Change Walkthrough drafted from the real diff, current source (file:line), and the actual tests; explain-back questions prepared; evidence not stale (refreshed if the patch changed) |
+| CONTRIBUTOR_UNDERSTANDING → REVIEW | explain-back attempted and its status recorded — UNDERSTOOD (explicit human confirmation), DEFERRED (human chose to proceed without it), or INCOMPLETE (gaps named, teaching offered); the agent never marks UNDERSTOOD itself |
+| REVIEW → PR_READY | adversarial diff review performed; maintainer-perspective simulation answered from the actual patch; no unresolved correctness issues; testing evidence and untested areas recorded; PR draft problem-first |
+| PR_READY → IN_REVIEW | PR published with explicit REMOTE_WRITE; iteration baseline recorded (revision, validations run) |
+| IN_REVIEW → PATCH | accepted review comment requires a code change; concern classified and explained to the contributor first |
+| IN_REVIEW → UPSTREAM_RESOLVED | merged, closed, or withdrawn; final iteration summary recorded |
 
 Gate failure is not failure of the run — it is a conclusion (INVALID, ALREADY_FIXED,
 DUPLICATE, UNCONFIRMED, DESIGN_QUESTION, TOO_LARGE). Record which gate stopped the run
-and why. Never skip a gate because you feel confident.
+and why. Never skip a gate because you feel confident. If REVIEW sends the patch back to
+PATCH, the Change Walkthrough and the understanding status go stale — refresh both after
+the new GREEN.
+
+## Contributor understanding (CONTRIBUTOR_UNDERSTANDING)
+
+AI assists the contribution; the human must understand and own it (kernel: "you are
+expected to understand and to be able to defend everything you submit").
+
+After a verified patch, produce the **Change Walkthrough**
+(assets/change-walkthrough.md): what was broken, where it sits in the execution/data
+flow, what changed, why this location is correct, what invariant is restored, what was
+deliberately not changed, which test proves the fix, and what may still regress. It
+explains the engineering reasoning — never a line-by-line narration — and must reference
+real current source (file:line) and the actual tests. Summaries never replace re-reading
+the source.
+
+Then run the **Explain-Back check** with the human — a conversation, not an exam. The
+contributor should be able to explain: (1) what the bug/problem is; (2) how the affected
+code currently works; (3) why the patch fixes it; (4) why the test failed before the
+fix; (5) the main regression risk. If understanding is incomplete: explain the missing
+concept → show the relevant code path → continue — one concept at a time, guided. Record
+the outcome as UNDERSTOOD (only on explicit human confirmation), DEFERRED, or INCOMPLETE
+(gaps named). Never claim the human understands; claim it for them is forbidden.
 
 ## Repository recon (always first)
 
@@ -126,6 +188,46 @@ CODEOWNERS, PR/issue templates, CI configs) and produce the Repository Contribut
 Profile using assets/repository-recon-report.md. Confirm build/test commands by reading
 the manifests they point to, not by guessing. Production edits start only after the
 profile exists. Full method: references/repository-recon.md.
+
+## Adaptive Repository Context Acquisition
+
+Never load a large repository into context. The law: **cognition selects, source
+proves, tests verify, history explains.** Understanding is hierarchical (L0 project →
+L1 subsystem → L2 component → L3 object → L4 current source); a task starts at L0/L1
+and descends only through relevant areas.
+
+1. **Backend** (from recon): AOCI_NATIVE when `aoci.*.txt` volumes exist and sampled
+   entries re-hash aligned against `.aoci/baseline.json`; NATIVE_PROJECT_MEMORY when
+   this skill's persisted profile/receipts exist; else LIGHTWEIGHT_FALLBACK. Never
+   regenerate a whole-repo semantic index when an aligned AOCI index exists; cognition
+   claims are leads, never truth.
+2. **Route retrieval by task type** — no universal ranking policy:
+
+```bash
+python3 <skill-dir>/scripts/retrieval_router.py <repo> "<query>" --task-type trace2code --top-k 8 --json
+```
+
+   Signals: lexical (BM25), path, symbol, test-relations, git history, cognition,
+   bounded graph expansion (priority queue, depth ≤2, distance penalty) — fused by RRF
+   with task priors. The router may return NO_RELEVANT_LOCAL_CONTEXT (abstention report
+   with factors; scores are ordering evidence, never calibrated probabilities).
+3. **Plan before reading, pack as spans**: `context_planner.py plan` → Task Context
+   Plan (radius tiers with reasons, token allocation, visible exclusions); Radius 1 =
+   targets + direct strong relations + direct tests + contracts; expand to Radius 2
+   (callers/callees/siblings) or 3 (subsystem/history) only with a recorded reason
+   naming what R1 failed to establish. `context_planner.py pack` delivers a bounded
+   Context Pack of symbol **spans** with digest + why — not whole files.
+4. **Enforce budgets**: `budget_governor.py <pack.json>` — at soft budget: rerank,
+   prune to spans, externalize to the receipt, drop superseded observations; never
+   drop goal/done_when/safety constraints/blockers/source identities; silent
+   truncation is banned.
+5. **Verify sources**: record every real read with `cognition_receipt.py
+   open/record-read/verify/close`; `verify` re-hashes and flags CHANGED files — never
+   mix obsolete source with current source. Before editing any object, read its
+   current source; no summary, embedding, graph, or memory substitutes for this.
+
+Method and anti-patterns: references/context-acquisition.md, retrieval-strategies.md,
+context-packing.md; evaluation: references/retrieval-evaluation.md.
 
 ## Evidence and validation
 
@@ -148,6 +250,39 @@ references/testing-strategy.md): baseline → reproducer → RED/GREEN regressio
 tests → package suite → formatter/linter/typecheck → build → integration → live API
 (only with real credentials; never simulate). For protocol/serialization fixes assert
 explicit behavior, not snapshots.
+
+## Progress communication
+
+Report progress in short standardized blocks — never status essays. This is the
+contribution-workflow extension of the Goal Contract communication protocol
+(references/goal-contracts.md): the compiler emits the GOAL card and the
+FOUND/EVIDENCE/IMPACT/NEXT blocks; PATCH INTENT is the block form of the PATCH PLAN
+(assets/implementation-plan.md), and the blocks below complete the set for the patch and
+review phases. Each block is 2–6 lines and states facts with references.
+
+```
+INVESTIGATION   FOUND: <what was located, file:line>
+                EVIDENCE: <reproducer output / manifest artifact refs>
+                IMPACT: <who is affected, user-visible effect>
+                NEXT: <one next step>
+
+BEFORE PATCH    PATCH INTENT: <the change in one sentence>
+                WHY: <why this location and approach>
+                EXPECTED FILES: <paths from the PATCH PLAN>
+                NON-GOALS: <adjacent things deliberately untouched>
+                VALIDATION PLAN: <commands, incl. expected SKIPPED/UNAVAILABLE>
+
+AFTER PATCH     RESULT: <GREEN / back-to-PATCH / stopped, one line>
+                PROOF: <RED + GREEN artifact refs>
+                WHAT CHANGED: <files and behavior, briefly>
+                WHAT DID NOT CHANGE: <explicit>
+                REMAINING RISK: <what could still regress>
+
+DURING REVIEW   REVIEWER CONCERN: <paraphrased, categorized>
+                INTERPRETATION: <what it actually challenges>
+                EVIDENCE: <what was re-checked, refs>
+                ACTION: <modify / justify / ask — and the response draft>
+```
 
 ## Scope audit and diff budget
 
@@ -191,10 +326,22 @@ Method: references/patch-design.md (§ diff budget, § scope audit).
 
 ### Fix path (Mode 5)
 
-RED → PATCH → GREEN → REGRESSION → REVIEW → PR_READY, exactly per the state machine.
-Produce assets/implementation-plan.md (PATCH PLAN) before editing production code, and
+RED → PATCH → GREEN → REGRESSION → CONTRIBUTOR_UNDERSTANDING → REVIEW → PR_READY,
+exactly per the state machine. Produce assets/implementation-plan.md (PATCH PLAN) before
+editing production code, assets/change-walkthrough.md after REGRESSION, and
 assets/review-report.md from the adversarial pass. Prepare, never publish, the PR draft
 (assets/pull-request-template.md) — publishing needs REMOTE_WRITE.
+
+### Review-response path (Mode 9)
+
+A published PR receiving review comments does not end the run. Classify each concern
+(correctness, design, scope, test coverage, compatibility, style, documentation,
+maintainability, question), inspect the relevant source and evidence, explain the
+concern to the contributor, then either modify (re-enter PATCH; affected validation is
+stale and must be re-run) or prepare a respectful evidence-backed response — never
+automatic agreement. Each revision gets an iteration summary so reviewers never
+reconstruct prior discussion. Full protocol: references/review-response.md; worksheet:
+assets/review-response.md.
 
 ## Output artifacts
 
@@ -203,10 +350,13 @@ assets/review-report.md from the adversarial pass. Prepare, never publish, the P
 | Repository Contribution Profile | assets/repository-recon-report.md | after every recon |
 | Candidate Report | assets/candidate-report.md | Bug Hunt / triage outcome |
 | Investigation Report | assets/investigation-report.md | Investigation Only, PROVE |
+| Issue Draft | assets/issue-draft.md | before reporting a bug upstream (posting = REMOTE_WRITE) |
 | Implementation Plan (PATCH PLAN) | assets/implementation-plan.md | before PATCH |
 | Validation Report | assets/validation-report.md | REGRESSION, and PR prep |
+| Change Walkthrough | assets/change-walkthrough.md | CONTRIBUTOR_UNDERSTANDING; refreshed after any re-patch |
 | Review Report | assets/review-report.md | REVIEW |
 | PR Draft | assets/pull-request-template.md | PR_READY |
+| Review Response + Iteration Summary | assets/review-response.md | IN_REVIEW, once per revision |
 
 Investigation Reports end with exactly one conclusion: CONFIRMED, UNCONFIRMED, INVALID,
 ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
@@ -221,6 +371,12 @@ ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/diff_scope_check.py | diff vs intended scope; drift, lockfile, formatting-only flags; budget check | none |
 | scripts/evidence_manifest.py | witnessed command execution → tamper-evident JSONL manifest | none |
 | scripts/validation_report.py | manifest → Validation Report table; never collapses skips into PASS | none |
+| scripts/goal_compiler.py | Goal Contract + Goal Card; done_when observability gate; hypothesis records | none |
+| scripts/retrieval_router.py | hybrid retrieval (lexical/path/symbol/test/history/cognition/graph), RRF fusion, abstention report; AOCI detection + alignment | none |
+| scripts/context_planner.py | Task Context Plan + bounded Context Pack of symbol spans with digests | none |
+| scripts/budget_governor.py | token budget accounting; soft/hard thresholds; ordered remediation actions | none |
+| scripts/cognition_receipt.py | Task Cognition Receipt: open/record-read/verify (drift detection)/close/reconstruct | none |
+| scripts/retrieval_eval.py | Recall@K, MRR, BCY@B, precision, line metrics; per-task-type + signal ablation | none |
 
 Scripts are deterministic collectors: they report what is on disk or returned by the
 platform API, and state when data is incomplete. They never interpret semantics.
@@ -237,6 +393,12 @@ platform API, and state when data is incomplete. They never interpret semantics.
 | references/testing-strategy.md | Mode 5 (with patch-design) |
 | references/patch-design.md | Mode 5 |
 | references/code-review.md | Mode 6 |
+| references/review-response.md | Mode 9 — a published PR receives review |
 | references/maintainer-etiquette.md | before any comment, claim, or PR text |
 | references/ai-assisted-development.md | always, before packaging anything |
+| references/goal-contracts.md | Goal Intelligence — every non-trivial task |
+| references/context-acquisition.md | any repository too large to read whole |
+| references/retrieval-strategies.md | routing, fusion, abstention (with retrieval_router) |
+| references/context-packing.md | packs, budgets, compaction, receipts |
+| references/retrieval-evaluation.md | measuring context quality separately from patches |
 | references/ecosystem-guides.md | when portability or per-agent install questions arise |
