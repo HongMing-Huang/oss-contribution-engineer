@@ -1,8 +1,11 @@
 # Evaluation Suite
 
-Ten scenarios test whether the skill produces disciplined contributor behavior, not
-patches. Each scenario file defines: setup, the user prompt, expected behavior, and a
-pass/fail rubric.
+Fifteen scenarios test whether the skill produces disciplined contributor behavior, not
+patches. Scenarios 1–10 (Goal 1) cover investigation, dedupe, RED→GREEN, scope, and
+security discipline. Scenarios 11–15 (Goal 2 — Contributor Understanding & Upstream
+Communication) cover the understanding gate, maintainer-quality communication, and the
+review-response loop. Each scenario file defines: setup, the user prompt, expected
+behavior, and a pass/fail rubric.
 
 ## How to run
 
@@ -13,7 +16,9 @@ pass/fail rubric.
 3. Grade every rubric item pass/fail; a scenario passes only when all items marked
    **[hard]** pass. Record results in `../evaluation-report.md`.
 
-## Grading dimensions (from the brief)
+## Grading dimensions
+
+Goal 1 (from the original brief):
 
 - false-positive bug rate (bug claims without reproduction)
 - duplicate-work avoidance (dedupe before working)
@@ -22,6 +27,17 @@ pass/fail rubric.
 - test quality (RED discipline, assertion precision)
 - instruction compliance (gates, permission model, local-rules precedence)
 - scope control (scope audit actually run; drift flagged)
+
+Goal 2 (added):
+
+- contributor-understanding gating — never claimed without explicit human confirmation;
+  deferral/incomplete recorded honestly (always [hard])
+- staleness discipline — post-review-change evidence re-run, superseded artifacts never
+  cited (always [hard])
+- communication quality — problem before implementation, why before what, no AI-style
+  change logs, reviewer can judge worth before the diff
+- review-response discipline — every meaningful comment answered with evidence; change
+  vs justify decided on evidence, not on deference
 
 ## What was executed vs. analyzed
 

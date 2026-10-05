@@ -4,11 +4,13 @@
 Reads the manifest written by evidence_manifest.py and emits the required table
 (Command | Purpose | Executed | Result | Evidence). Skipped/unavailable entries stay
 skipped/unavailable — they are never collapsed into PASS. Exits non-zero if any
-command FAILED or if unexecuted entries exist, so "everything green" cannot be
-silently assumed.
+command FAILED, if unexecuted entries exist, or if head-bound evidence has gone STALE
+(recorded at a git HEAD that is no longer current — typical after a review-driven
+change), so "everything green" cannot be silently assumed or borrowed from older code.
 
 Exit codes: 0 = all executed and passed, 1 = at least one FAIL, 2 = usage,
-3 = no manifest, 4 = report contains unexecuted entries (visible incompleteness).
+3 = no manifest, 4 = report contains unexecuted entries (visible incompleteness),
+5 = head-bound evidence is STALE for the current HEAD (rerun before citing PASS).
 """
 
 from __future__ import annotations
@@ -16,10 +18,23 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
 EVIDENCE_DIR = ".oss-contrib-evidence"
+
+
+def current_git_head(repo: Path) -> str | None:
+    p = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                       capture_output=True, text=True, shell=False)
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def files_changed_between(repo: Path, old: str, new: str) -> list[str]:
+    p = subprocess.run(["git", "-C", str(repo), "diff", "--name-only", old + ".." + new],
+                       capture_output=True, text=True, shell=False)
+    return [ln for ln in p.stdout.splitlines() if ln.strip()] if p.returncode == 0 else []
 
 
 def load_entries(repo: Path) -> list[dict]:
@@ -40,8 +55,9 @@ def load_entries(repo: Path) -> list[dict]:
     return entries
 
 
-def build_report(entries: list[dict]) -> dict:
+def build_report(entries: list[dict], head: str | None = None) -> dict:
     rows = []
+    stale_heads = set()
     for e in entries:
         if e["kind"] == "execution":
             expected_fail = bool(e.get("expected_failure"))
@@ -51,12 +67,24 @@ def build_report(entries: list[dict]) -> dict:
                 shown = "PASS (expected failure — RED proof)"
             else:
                 shown = e["status"]
+            # Head-bound evidence (GREEN runs, suites, lint, build) certifies the code
+            # state it ran on. If HEAD has moved, the PASS no longer describes current
+            # code — it is STALE, not passing. RED proofs are never head-bound.
+            stale = (e["status"] == "PASS" and e.get("head_bound")
+                     and head is not None and e.get("git_head")
+                     and e["git_head"] != head)
+            counted = e["status"]
+            if stale:
+                stale_heads.add(e["git_head"])
+                counted = "STALE"
+                shown = "STALE (recorded at %s; current HEAD %s)" % (
+                    e["git_head"][:12], head[:12])
             rows.append({
                 "command": shlex.join(e["command"]),
                 "purpose": e["purpose"],
                 "executed": True,
                 "result": shown,
-                "counted_result": e["status"],
+                "counted_result": counted,
                 "evidence": "%s (sha256 %s, exit %s, head %s)" % (
                     e["artifact"], e["artifact_sha256"][:12], e["exit_code"],
                     (e.get("git_head") or "n/a")[:12]),
@@ -73,9 +101,13 @@ def build_report(entries: list[dict]) -> dict:
     # expected failures (RED proofs) are evidence, not validation failures
     fails = sum(1 for r in rows if r["counted_result"] == "FAIL")
     unexecuted = sum(1 for r in rows if not r["executed"])
+    stale = sum(1 for r in rows if r["counted_result"] == "STALE")
     passed = sum(1 for r in rows if r["counted_result"] == "PASS")
     if fails:
         conclusion = "FAILED"
+    elif stale:
+        conclusion = ("STALE — %d head-bound evidence record(s) predate the current HEAD; "
+                      "rerun affected validation before citing PASS" % stale)
     elif unexecuted:
         conclusion = "INCOMPLETE — %d validation step(s) not executed; say so in the PR" % unexecuted
     else:
@@ -83,13 +115,16 @@ def build_report(entries: list[dict]) -> dict:
     return {
         "rows": rows,
         "summary": {"executed": len(rows) - unexecuted, "passed": passed,
-                    "failed": fails, "not_executed": unexecuted},
+                    "failed": fails, "not_executed": unexecuted, "stale": stale},
         "conclusion": conclusion,
-        "rule": "skipped work is never collapsed into PASS; unexecuted steps are listed, not hidden",
+        "stale_heads": sorted(stale_heads),
+        "head": head,
+        "rule": "skipped work is never collapsed into PASS; unexecuted steps are listed, "
+                "not hidden; head-bound PASS never survives a moved HEAD",
     }
 
 
-def render_markdown(report: dict) -> str:
+def render_markdown(report: dict, repo: Path | None = None) -> str:
     lines = ["# Validation Report", "",
              "| Command | Purpose | Executed | Result | Evidence |",
              "|---------|---------|----------|--------|----------|"]
@@ -98,9 +133,15 @@ def render_markdown(report: dict) -> str:
             r["command"], r["purpose"],
             "yes" if r["executed"] else "**no**", r["result"], r["evidence"]))
     s = report["summary"]
-    lines += ["", "Summary: %d executed, %d passed, %d failed, %d not executed." % (
-        s["executed"], s["passed"], s["failed"], s["not_executed"]),
+    lines += ["", "Summary: %d executed, %d passed, %d failed, %d not executed, %d stale." % (
+        s["executed"], s["passed"], s["failed"], s["not_executed"], s["stale"]),
         "Conclusion: **%s**" % report["conclusion"]]
+    if report.get("stale_heads") and report.get("head") and repo is not None:
+        for old in report["stale_heads"]:
+            changed = files_changed_between(repo, old, report["head"])
+            if changed:
+                lines += ["", "Files changed since stale evidence (rerun what covers them): %s"
+                          % ", ".join(changed)]
     return "\n".join(lines)
 
 
@@ -109,15 +150,18 @@ def main() -> int:
     ap.add_argument("repo", nargs="?", default=".")
     ap.add_argument("--markdown", action="store_true", help="emit the report as markdown")
     ap.add_argument("--out", help="also write the markdown report to this file")
+    ap.add_argument("--head", help="treat this commit as the current HEAD instead of querying git "
+                                   "(e.g. a PR head SHA captured from upstream)")
     args = ap.parse_args()
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
         print("error: %s is not a directory" % repo, file=sys.stderr)
         return 2
 
-    report = build_report(load_entries(repo))
+    head = args.head or current_git_head(repo)
+    report = build_report(load_entries(repo), head)
     if args.markdown or args.out:
-        text = render_markdown(report)
+        text = render_markdown(report, repo)
         if args.out:
             Path(args.out).write_text(text + "\n")
         if args.markdown:
@@ -125,15 +169,17 @@ def main() -> int:
     else:
         for r in report["rows"]:
             flag = "" if r["executed"] else "  [NOT EXECUTED]"
-            print("%-11s  %s%s" % (r["result"], r["purpose"], flag))
+            print("%-11s  %s%s" % (r["result"][:11], r["purpose"], flag))
             print("              %s" % r["command"])
         s = report["summary"]
-        print("summary: %d executed, %d passed, %d failed, %d not executed" % (
-            s["executed"], s["passed"], s["failed"], s["not_executed"]))
+        print("summary: %d executed, %d passed, %d failed, %d not executed, %d stale" % (
+            s["executed"], s["passed"], s["failed"], s["not_executed"], s["stale"]))
         print("conclusion: %s" % report["conclusion"])
 
     if report["summary"]["failed"]:
         return 1
+    if report["summary"]["stale"]:
+        return 5
     if report["summary"]["not_executed"]:
         return 4
     return 0

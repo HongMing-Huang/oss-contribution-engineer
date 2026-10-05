@@ -6,6 +6,11 @@ command (record) or because a skip was explicitly declared with a reason (record
 Each record captures the command, exit code, duration, captured output (with sha256),
 the git HEAD at run time, and the environment.
 
+`--head-bound` marks evidence that is only valid for the recorded HEAD (GREEN runs,
+suites, lint, build). validation_report.py flags such entries as STALE when the
+current HEAD differs. RED proofs and pre-fix baselines are deliberately recorded
+WITHOUT the flag — they are supposed to run on older code.
+
 Security: the command is executed as an argv list with shell=False — no shell ever
 parses it. The list is anchored through /usr/bin/env purely so PATH resolution happens
 outside any shell; privileges are exactly the caller's, and running a command is the
@@ -16,6 +21,7 @@ Evidence lives in <repo>/.oss-contrib-evidence/ (manifest.jsonl + artifacts/).
 Usage
 -----
   evidence_manifest.py [repo] record --purpose "RED proof" -- <command> [args...]
+  evidence_manifest.py [repo] record --purpose "GREEN" --head-bound -- <command> [args...]
   evidence_manifest.py [repo] record-skip --purpose "integration suite" --status SKIPPED --reason "no docker"
   evidence_manifest.py [repo] show [--markdown]
   evidence_manifest.py [repo] verify <record-id>
@@ -67,7 +73,8 @@ def slugify(text: str, limit: int = 40) -> str:
     return slug or "run"
 
 
-def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool) -> int:
+def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
+               head_bound: bool = False) -> int:
     if not command:
         print("error: no command given after '--'", file=sys.stderr)
         return 2
@@ -114,6 +121,7 @@ def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool) 
         "exit_code": p.returncode,
         "status": status,
         "expected_failure": expect_fail,
+        "head_bound": head_bound,
         "duration_ms": duration_ms,
         "artifact": str(artifact.relative_to(repo)),
         "artifact_sha256": sha,
@@ -211,6 +219,9 @@ def main() -> int:
     p_rec.add_argument("--expect-fail", action="store_true",
                        help="non-zero exit is the expected outcome (e.g. RED proof); "
                             "exiting 0 records FAIL instead")
+    p_rec.add_argument("--head-bound", action="store_true",
+                       help="evidence is only valid for the recorded HEAD (GREEN, suites, "
+                            "lint, build); validation_report marks it STALE after HEAD moves")
     p_rec.add_argument("command", nargs=argparse.REMAINDER, help="command after '--'")
 
     p_skip = sub.add_parser("record-skip", help="record a non-execution explicitly")
@@ -232,7 +243,7 @@ def main() -> int:
 
     if args.cmd == "record":
         command = [c for c in args.command if c != "--"]
-        return cmd_record(repo, args.purpose, command, args.expect_fail)
+        return cmd_record(repo, args.purpose, command, args.expect_fail, args.head_bound)
     if args.cmd == "record-skip":
         return cmd_record_skip(repo, args.purpose, args.status, args.reason)
     if args.cmd == "show":

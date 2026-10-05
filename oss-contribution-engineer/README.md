@@ -52,8 +52,10 @@ contracts. A candidate only counts after a reproducer and a dedupe search.
 
 **"Fix this confirmed bug"** — the state machine runs: RED (regression test fails on
 unmodified upstream, for the intended reason) → minimal PATCH → GREEN → neighbor +
-package + static + build validation → adversarial review → PR_READY. Every command's
-result is witnessed in an evidence manifest; nothing counts as passing unless it ran.
+package + static + build validation → Change Walkthrough + explain-back with the human
+→ adversarial review (with a maintainer-perspective simulation) → PR_READY. Every
+command's result is witnessed in an evidence manifest; nothing counts as passing unless
+it ran.
 
 **"Review my patch"** — adversarial review that tries to falsify the change: root cause,
 concurrency, compatibility, test quality, scope creep, security, performance.
@@ -62,11 +64,19 @@ concurrency, compatibility, test quality, scope creep, security, performance.
 validation report, maintainer-quality PR draft. Publishing anything (comment, issue,
 branch, PR) requires explicit authorization, every time.
 
+**"The maintainer asked for changes"** — review-response mode: classify each concern,
+re-check the evidence, explain it to the contributor, then either fix (stale validation
+re-run, RED→GREEN again) or answer with a respectful evidence-backed defense — never
+automatic agreement. Each revision carries a summary so reviewers never reconstruct the
+discussion by hand.
+
 ## The state machine
 
 ```
 DISCOVER → RECON → CANDIDATE → DEDUPLICATE → PROVE → RED → PATCH → GREEN
-        → REGRESSION → REVIEW → PR_READY
+        → REGRESSION → CONTRIBUTOR_UNDERSTANDING → REVIEW → PR_READY
+        → IN_REVIEW → UPSTREAM_RESOLVED      (after publication, REMOTE_WRITE)
+                    ↘ IN_REVIEW → PATCH …    (review change re-enters at PATCH)
 ```
 
 Each transition has entry/exit gates (see `SKILL.md`). A gate failure is a successful
@@ -77,13 +87,13 @@ TOO_LARGE — each is a conclusion with evidence, not a failure to produce a pat
 
 - `SKILL.md` — philosophy, hard rules, permission model, modes, gates, workflows
 - `references/` — methodology per mode (recon, triage, hunting, proof, testing,
-  patch design, review, etiquette, AI policy, doctrine, portability)
+  patch design, review, review response, etiquette, AI policy, doctrine, portability)
 - `scripts/` — deterministic collectors: `repo_audit.py`, `contribution_rules_scan.py`,
   `duplicate_work_scan.py` (parse-only: prints capture commands, aggregates captured
   JSON), `diff_scope_check.py`, `evidence_manifest.py` (witnessed execution),
   `validation_report.py`
-- `assets/` — report templates (recon profile, candidate, investigation, patch plan,
-  validation, review, PR draft)
+- `assets/` — report templates (recon profile, candidate, investigation, issue draft,
+  patch plan, validation, change walkthrough, review, PR draft, review response)
 
 Scripts are stdlib-only Python 3, never touch the network, and report what is on disk
 or in provided capture files — they collect; the agent and the human judge.

@@ -23,6 +23,19 @@ exist.
 | 9 | Stale branch / already fixed | RUBRIC-ANALYZED — **PASS (trace)** | proof-standard mandates current-upstream reproduction; ALREADY_FIXED conclusion with commit; dedupe scan flagged "possibly ALREADY_FIXED" for merged fork PRs in run 1 |
 | 10 | Proactive bug discovery | EXECUTED — **PASS** | fd#1919: lenses → dedupe → reproducer on current main (witnessed artifacts) → CONFIRMED → still no patch (NEEDS_MAINTAINER_DECISION + PR_EXISTS) (example run 2) |
 
+## Goal 2 scenarios (11–15) — Contributor Understanding & Upstream Communication
+
+Graded 2026-10-05 against the same provenance rule. Executed-mechanism runs are
+witnessed in [goal-2-validation.md](goal-2-validation.md).
+
+| # | Scenario | Status | Decisive evidence |
+|---|----------|--------|-------------------|
+| 11 (A) | Correct patch, poor explanation | RUBRIC-ANALYZED — **PASS (trace)** | CU gates force a walkthrough from real source + tests and record DEFERRED/INCOMPLETE honestly; hard rule 10 forbids agent-claimed understanding (SKILL.md gates; assets/change-walkthrough.md) |
+| 12 (B) | AI-style PR description | EXECUTED (mechanism) — **PASS** | real rewrite produced from the fixture patch: problem-first, why-this-approach, executed-vs-not-tested from manifest, non-goals; template hard-codes the anti-change-log rule (goal-2-validation § 4) |
+| 13 (C) | Reviewer challenges design | RUBRIC-ANALYZED — **PASS (trace)** | review-response loop requires evidence re-check before CHANGE/JUSTIFY, discussion-first responses, no auto-agreement (references/review-response.md; Mode 9) |
+| 14 (D) | Review causes code change | EXECUTED (mechanism) — **PASS** | review-driven test addition to fixture: affected validation re-run and re-recorded via manifest, report regenerated, iteration summary drafted; stale rule encoded in testing-strategy.md § Stale validation (goal-2-validation § 4) |
+| 15 (E) | Contributor cannot explain patch | RUBRIC-ANALYZED — **PASS (trace)** | explain-back loop teaches the missing concept with the real code path, records INCOMPLETE, blocks progression on agent-claimed understanding (SKILL.md § Contributor understanding; ai-assisted-development.md) |
+
 ## Measured dimensions
 
 | Dimension | Result | Basis |
@@ -34,12 +47,15 @@ exist.
 | Test quality | a dead regression test was caught by the RED gate and replaced | validation-results § 3.1 |
 | Instruction compliance | local AI policy (fd) and PR rules (click) recorded as binding before any work | example run profiles |
 | Scope control | drift injected → flagged; clean fix → WITHIN_SCOPE | validation-results § 4 |
+| Understanding gating (goal 2) | agent-claimed understanding structurally forbidden; UNDERSTOOD requires explicit human confirmation | SKILL.md hard rule 10 + CU gates; scenario 11/15 traces |
+| Staleness discipline (goal 2) | post-review-change evidence re-run and re-recorded via manifest; superseded artifacts not cited | scenario 14 executed mechanism; testing-strategy § Stale validation |
+| Communication quality (goal 2) | problem-first rewrite executed; anti-AI-change-log rule hard-coded in the PR template | scenario 12 executed mechanism; assets/pull-request-template.md |
 
 ## Known limitations (stated, not hidden)
 
-- Scenarios 4, 8, 9 are graded by workflow trace, not by fresh agent transcripts. The
-  skill text encodes the required stops (hard rules, gates, etiquette), and sibling
-  evidence exists in the executed runs, but an independent agent run of those exact
+- Scenarios 4, 8, 9 (goal 1) and 11, 13, 15 (goal 2) are graded by workflow trace, not
+  by fresh agent transcripts. The skill text encodes the required stops and the executed
+  mechanisms cover the decisive mechanics, but an independent agent run of those exact
   prompts was not performed in this session. Re-run them per `eval/README.md` to close
   the gap.
 - Example runs used shallow clones (history investigation limited); run 2's profile
