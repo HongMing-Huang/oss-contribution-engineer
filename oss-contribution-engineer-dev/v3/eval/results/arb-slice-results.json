@@ -1,0 +1,560 @@
+{
+  "slice": "ARB v0_1 frozen 6-task slice (base-commit clones, SHA-verified)",
+  "summary": {
+    "per_arm": {
+      "router": {
+        "MRR": 0.183,
+        "Recall@5": 0.167,
+        "Recall@10": 0.333,
+        "BCY@4000": 0.0,
+        "BCY@8000": 0.0,
+        "BCY@16000": 0.0,
+        "packet_tokens_est_mean": 156762.3,
+        "files_delivered_mean": 20,
+        "latency_ms_mean": 54310.2,
+        "gold_displaced_by_packing_total": 2
+      },
+      "lexical-only": {
+        "MRR": 0.06,
+        "Recall@5": 0.167,
+        "Recall@10": 0.333,
+        "BCY@4000": 0.0,
+        "BCY@8000": 0.0,
+        "BCY@16000": 0.0,
+        "packet_tokens_est_mean": 175152.3,
+        "files_delivered_mean": 20,
+        "latency_ms_mean": 51637.2,
+        "gold_displaced_by_packing_total": 2
+      },
+      "repomap-only": {
+        "MRR": 0.018,
+        "Recall@5": 0.0,
+        "Recall@10": 0.167,
+        "BCY@4000": 0.0,
+        "BCY@8000": 0.0,
+        "BCY@16000": 0.0,
+        "packet_tokens_est_mean": 78396.8,
+        "files_delivered_mean": 20,
+        "latency_ms_mean": 50525,
+        "gold_displaced_by_packing_total": 1
+      },
+      "symbol+test-only": {
+        "MRR": 0.167,
+        "Recall@5": 0.167,
+        "Recall@10": 0.167,
+        "BCY@4000": 0.0,
+        "BCY@8000": 0.0,
+        "BCY@16000": 0.0,
+        "packet_tokens_est_mean": 106636.8,
+        "files_delivered_mean": 20,
+        "latency_ms_mean": 50649.5,
+        "gold_displaced_by_packing_total": 1
+      }
+    }
+  },
+  "routing_regret": {
+    "mean": 0.0,
+    "n_regret": 0,
+    "n": 6,
+    "samples": [
+      {
+        "id": "arb-3cfa329da7",
+        "repo": "clap",
+        "router": 0.0,
+        "best_arm": "router",
+        "best_bcy": 0.0,
+        "regret": 0.0
+      },
+      {
+        "id": "arb-4717c49cf5",
+        "repo": "diffusers",
+        "router": 0.0,
+        "best_arm": "router",
+        "best_bcy": 0.0,
+        "regret": 0.0
+      },
+      {
+        "id": "arb-dd57d69748",
+        "repo": "fastapi",
+        "router": 0.0,
+        "best_arm": "router",
+        "best_bcy": 0.0,
+        "regret": 0.0
+      },
+      {
+        "id": "arb-5df695f154",
+        "repo": "gin",
+        "router": 0.0,
+        "best_arm": "router",
+        "best_bcy": 0.0,
+        "regret": 0.0
+      },
+      {
+        "id": "arb-bdc0493f3c",
+        "repo": "transformers",
+        "router": 0.0,
+        "best_arm": "router",
+        "best_bcy": 0.0,
+        "regret": 0.0
+      },
+      {
+        "id": "arb-1511b1ae71",
+        "repo": "vite",
+        "router": 0.0,
+        "best_arm": "router",
+        "best_bcy": 0.0,
+        "regret": 0.0
+      }
+    ]
+  },
+  "rows": [
+    {
+      "id": "arb-3cfa329da7",
+      "task_type": "code2test",
+      "arm": "router",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 175770,
+      "latency_ms": 2264,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-3cfa329da7",
+      "task_type": "code2test",
+      "arm": "lexical-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 239366,
+      "latency_ms": 2157,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-3cfa329da7",
+      "task_type": "code2test",
+      "arm": "repomap-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 11214,
+      "latency_ms": 2193,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-3cfa329da7",
+      "task_type": "code2test",
+      "arm": "symbol+test-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 125535,
+      "latency_ms": 2219,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-4717c49cf5",
+      "task_type": "trace2code",
+      "arm": "router",
+      "mrr": 0.1,
+      "recall": {
+        "@5": 0.0,
+        "@10": 1.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 244816,
+      "latency_ms": 64787,
+      "gold_displaced_by_packing": 1
+    },
+    {
+      "id": "arb-4717c49cf5",
+      "task_type": "trace2code",
+      "arm": "lexical-only",
+      "mrr": 0.25,
+      "recall": {
+        "@5": 1.0,
+        "@10": 1.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 214364,
+      "latency_ms": 54569,
+      "gold_displaced_by_packing": 1
+    },
+    {
+      "id": "arb-4717c49cf5",
+      "task_type": "trace2code",
+      "arm": "repomap-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 108774,
+      "latency_ms": 50521,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-4717c49cf5",
+      "task_type": "trace2code",
+      "arm": "symbol+test-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 112096,
+      "latency_ms": 52054,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-dd57d69748",
+      "task_type": "code2test",
+      "arm": "router",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 112689,
+      "latency_ms": 46876,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-dd57d69748",
+      "task_type": "code2test",
+      "arm": "lexical-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 63080,
+      "latency_ms": 46558,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-dd57d69748",
+      "task_type": "code2test",
+      "arm": "repomap-only",
+      "mrr": 0.111,
+      "recall": {
+        "@5": 0.0,
+        "@10": 1.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 42317,
+      "latency_ms": 46131,
+      "gold_displaced_by_packing": 1
+    },
+    {
+      "id": "arb-dd57d69748",
+      "task_type": "code2test",
+      "arm": "symbol+test-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 46891,
+      "latency_ms": 45824,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-5df695f154",
+      "task_type": "comment2context",
+      "arm": "router",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 110792,
+      "latency_ms": 193
+    },
+    {
+      "id": "arb-5df695f154",
+      "task_type": "comment2context",
+      "arm": "lexical-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 118444,
+      "latency_ms": 192
+    },
+    {
+      "id": "arb-5df695f154",
+      "task_type": "comment2context",
+      "arm": "repomap-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 72668,
+      "latency_ms": 232
+    },
+    {
+      "id": "arb-5df695f154",
+      "task_type": "comment2context",
+      "arm": "symbol+test-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 102338,
+      "latency_ms": 198
+    },
+    {
+      "id": "arb-bdc0493f3c",
+      "task_type": "trace2code",
+      "arm": "router",
+      "mrr": 1.0,
+      "recall": {
+        "@5": 1.0,
+        "@10": 1.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 256639,
+      "latency_ms": 177880,
+      "gold_displaced_by_packing": 1
+    },
+    {
+      "id": "arb-bdc0493f3c",
+      "task_type": "trace2code",
+      "arm": "lexical-only",
+      "mrr": 0.111,
+      "recall": {
+        "@5": 0.0,
+        "@10": 1.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 295470,
+      "latency_ms": 172239,
+      "gold_displaced_by_packing": 1
+    },
+    {
+      "id": "arb-bdc0493f3c",
+      "task_type": "trace2code",
+      "arm": "repomap-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 201327,
+      "latency_ms": 170108,
+      "gold_displaced_by_packing": 0
+    },
+    {
+      "id": "arb-bdc0493f3c",
+      "task_type": "trace2code",
+      "arm": "symbol+test-only",
+      "mrr": 1.0,
+      "recall": {
+        "@5": 1.0,
+        "@10": 1.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 241046,
+      "latency_ms": 169987,
+      "gold_displaced_by_packing": 1
+    },
+    {
+      "id": "arb-1511b1ae71",
+      "task_type": "comment2context",
+      "arm": "router",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 39868,
+      "latency_ms": 33861
+    },
+    {
+      "id": "arb-1511b1ae71",
+      "task_type": "comment2context",
+      "arm": "lexical-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 120190,
+      "latency_ms": 34108
+    },
+    {
+      "id": "arb-1511b1ae71",
+      "task_type": "comment2context",
+      "arm": "repomap-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 34081,
+      "latency_ms": 33965
+    },
+    {
+      "id": "arb-1511b1ae71",
+      "task_type": "comment2context",
+      "arm": "symbol+test-only",
+      "mrr": 0.0,
+      "recall": {
+        "@5": 0.0,
+        "@10": 0.0
+      },
+      "bcy": {
+        "@4000": 0.0,
+        "@8000": 0.0,
+        "@16000": 0.0
+      },
+      "files_delivered": 20,
+      "packet_tokens_est": 11915,
+      "latency_ms": 33615
+    }
+  ]
+}

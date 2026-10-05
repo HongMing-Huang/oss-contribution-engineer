@@ -34,7 +34,11 @@ def current_git_head(repo: Path) -> str | None:
 def files_changed_between(repo: Path, old: str, new: str) -> list[str]:
     p = subprocess.run(["git", "-C", str(repo), "diff", "--name-only", old + ".." + new],
                        capture_output=True, text=True, shell=False)
-    return [ln for ln in p.stdout.splitlines() if ln.strip()] if p.returncode == 0 else []
+    if p.returncode != 0:
+        return []
+    skip = (EVIDENCE_DIR + "/", "__pycache__/", ".pyc")
+    return [ln for ln in p.stdout.splitlines()
+            if ln.strip() and not any(s in ln for s in skip)]
 
 
 def load_entries(repo: Path) -> list[dict]:
@@ -58,6 +62,14 @@ def load_entries(repo: Path) -> list[dict]:
 def build_report(entries: list[dict], head: str | None = None) -> dict:
     rows = []
     stale_heads = set()
+    # head-bound PASS records that cover the CURRENT head — proof the current code
+    # state has been validated. Older head-bound records covered by a newer rerun at
+    # the current head are SUPERSEDED (visible history, not active evidence); only a
+    # head-bound record with no covering rerun is STALE and blocks the conclusion.
+    covering_ids = sorted(e["id"] for e in entries
+                          if e["kind"] == "execution" and e["status"] == "PASS"
+                          and e.get("head_bound") and head is not None
+                          and e.get("git_head") == head)
     for e in entries:
         if e["kind"] == "execution":
             expected_fail = bool(e.get("expected_failure"))
@@ -67,18 +79,19 @@ def build_report(entries: list[dict], head: str | None = None) -> dict:
                 shown = "PASS (expected failure — RED proof)"
             else:
                 shown = e["status"]
-            # Head-bound evidence (GREEN runs, suites, lint, build) certifies the code
-            # state it ran on. If HEAD has moved, the PASS no longer describes current
-            # code — it is STALE, not passing. RED proofs are never head-bound.
-            stale = (e["status"] == "PASS" and e.get("head_bound")
-                     and head is not None and e.get("git_head")
-                     and e["git_head"] != head)
             counted = e["status"]
-            if stale:
-                stale_heads.add(e["git_head"])
-                counted = "STALE"
-                shown = "STALE (recorded at %s; current HEAD %s)" % (
-                    e["git_head"][:12], head[:12])
+            if (e["status"] == "PASS" and e.get("head_bound")
+                    and head is not None and e.get("git_head")
+                    and e["git_head"] != head):
+                later_cover = [i for i in covering_ids if i > e["id"]]
+                if later_cover:
+                    counted = "SUPERSEDED"
+                    shown = "SUPERSEDED (rerun as #%d at current HEAD)" % later_cover[0]
+                else:
+                    stale_heads.add(e["git_head"])
+                    counted = "STALE"
+                    shown = "STALE (recorded at %s; current HEAD %s)" % (
+                        e["git_head"][:12], head[:12])
             rows.append({
                 "command": shlex.join(e["command"]),
                 "purpose": e["purpose"],
@@ -102,12 +115,13 @@ def build_report(entries: list[dict], head: str | None = None) -> dict:
     fails = sum(1 for r in rows if r["counted_result"] == "FAIL")
     unexecuted = sum(1 for r in rows if not r["executed"])
     stale = sum(1 for r in rows if r["counted_result"] == "STALE")
+    superseded = sum(1 for r in rows if r["counted_result"] == "SUPERSEDED")
     passed = sum(1 for r in rows if r["counted_result"] == "PASS")
     if fails:
         conclusion = "FAILED"
     elif stale:
-        conclusion = ("STALE — %d head-bound evidence record(s) predate the current HEAD; "
-                      "rerun affected validation before citing PASS" % stale)
+        conclusion = ("STALE — %d head-bound evidence record(s) predate the current HEAD "
+                      "with no rerun covering it; rerun affected validation before citing PASS" % stale)
     elif unexecuted:
         conclusion = "INCOMPLETE — %d validation step(s) not executed; say so in the PR" % unexecuted
     else:
@@ -115,12 +129,14 @@ def build_report(entries: list[dict], head: str | None = None) -> dict:
     return {
         "rows": rows,
         "summary": {"executed": len(rows) - unexecuted, "passed": passed,
-                    "failed": fails, "not_executed": unexecuted, "stale": stale},
+                    "failed": fails, "not_executed": unexecuted, "stale": stale,
+                    "superseded": superseded},
         "conclusion": conclusion,
         "stale_heads": sorted(stale_heads),
         "head": head,
         "rule": "skipped work is never collapsed into PASS; unexecuted steps are listed, "
-                "not hidden; head-bound PASS never survives a moved HEAD",
+                "not hidden; head-bound PASS never survives a moved HEAD without a "
+                "covering rerun (older records show SUPERSEDED, never PASS)",
     }
 
 

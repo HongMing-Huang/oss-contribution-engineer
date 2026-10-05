@@ -1,0 +1,45 @@
+{
+  "source": "eyuansu62/agent-retrieval-bench v0_1",
+  "frozen": [
+    {
+      "id": "arb-3cfa329da7",
+      "repo": "clap-rs/clap",
+      "base_commit": "68b5ff900bae8ee1a0e328c1a2301a7985e4f1c6",
+      "task": "code2test"
+    },
+    {
+      "id": "arb-dd57d69748",
+      "repo": "fastapi/fastapi",
+      "base_commit": "cbd64b09a32681d3b0ea097608bc62eb0d1587e0",
+      "task": "code2test"
+    },
+    {
+      "id": "arb-5df695f154",
+      "repo": "gin-gonic/gin",
+      "base_commit": "472d086af2acd924cb4b9d7be0525f7d790f69bc",
+      "task": "comment2context"
+    },
+    {
+      "id": "arb-1511b1ae71",
+      "repo": "vitejs/vite",
+      "base_commit": "04f974fbae1df6b7b6423d9083130579cdfa06ef",
+      "task": "comment2context"
+    },
+    {
+      "id": "arb-4717c49cf5",
+      "repo": "huggingface/diffusers",
+      "base_commit": "c8c84018e0d8704e44d68ff18b634f1f61a717f6",
+      "task": "trace2code"
+    },
+    {
+      "id": "arb-bdc0493f3c",
+      "repo": "huggingface/transformers",
+      "base_commit": "79f90bc68a652285f85ab7779bb2f07bed255e4f",
+      "task": "trace2code"
+    }
+  ],
+  "notes": [
+    "edit2ripple absent from v0_1 public release \u2014 recorded, not simulated; only 3 of 4 workflows covered by this slice",
+    "gold follows ARB: root_cause_files (+related_tests for code2test); supporting/negative files are distractors, not gold"
+  ]
+}

@@ -65,18 +65,28 @@ validation report, maintainer-quality PR draft. Publishing anything (comment, is
 branch, PR) requires explicit authorization, every time.
 
 **"The maintainer asked for changes"** — review-response mode: classify each concern,
-re-check the evidence, explain it to the contributor, then either fix (stale validation
-re-run, RED→GREEN again) or answer with a respectful evidence-backed defense — never
-automatic agreement. Each revision carries a summary so reviewers never reconstruct the
-discussion by hand.
+re-check the evidence, explain it to the contributor (concern → code context →
+assessment → evidence → action), then either fix (head-bound evidence goes STALE and is
+re-run, RED→GREEN again where the fix or test changed) or answer with a respectful
+evidence-backed defense — never automatic agreement. Fixes go up as new commits;
+readiness for re-review is signaled explicitly (re-request / PTAL). Each revision
+carries a summary so reviewers never reconstruct the discussion by hand.
+
+**"What happened to my PR?"** — the lifecycle is classified from captured PR state, not
+self-report: `upstream_state.py` turns captured PR/reviews/timeline JSON into one of
+eight outcomes — MERGED (the only success), CLOSED_NOT_MERGED, SUPERSEDED, WITHDRAWN,
+DROPPED_OR_STALE, and in-flight WAITING_FOR_REVIEW / CHANGES_REQUESTED /
+READY_FOR_REREVIEW. "PR opened" is not success, and `closed=true` is never reported as
+a merge.
 
 ## The state machine
 
 ```
 DISCOVER → RECON → CANDIDATE → DEDUPLICATE → PROVE → RED → PATCH → GREEN
         → REGRESSION → CONTRIBUTOR_UNDERSTANDING → REVIEW → PR_READY
-        → IN_REVIEW → UPSTREAM_RESOLVED      (after publication, REMOTE_WRITE)
-                    ↘ IN_REVIEW → PATCH …    (review change re-enters at PATCH)
+        → IN_REVIEW ⇄ PATCH …
+        → terminal: MERGED | CLOSED_NOT_MERGED | SUPERSEDED | WITHDRAWN | DROPPED_OR_STALE
+        in-flight: WAITING_FOR_REVIEW | CHANGES_REQUESTED | READY_FOR_REREVIEW
 ```
 
 Each transition has entry/exit gates (see `SKILL.md`). A gate failure is a successful
@@ -90,8 +100,10 @@ TOO_LARGE — each is a conclusion with evidence, not a failure to produce a pat
   patch design, review, review response, etiquette, AI policy, doctrine, portability)
 - `scripts/` — deterministic collectors: `repo_audit.py`, `contribution_rules_scan.py`,
   `duplicate_work_scan.py` (parse-only: prints capture commands, aggregates captured
-  JSON), `diff_scope_check.py`, `evidence_manifest.py` (witnessed execution),
-  `validation_report.py`
+  JSON), `diff_scope_check.py`, `evidence_manifest.py` (witnessed execution;
+  `--head-bound` ties PASS to the HEAD it ran on), `validation_report.py` (marks
+  head-bound evidence STALE after HEAD moves), `upstream_state.py` (parse-only: prints
+  PR capture commands, classifies the captured state into the 8 lifecycle outcomes)
 - `assets/` — report templates (recon profile, candidate, investigation, issue draft,
   patch plan, validation, change walkthrough, review, PR draft, review response)
 

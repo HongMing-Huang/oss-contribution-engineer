@@ -39,13 +39,17 @@ until it fails, and never weaken an existing test to manufacture RED.
 
 ## Stale validation (any post-GREEN change)
 
-Evidence is tied to the code state it tested (each manifest entry records git HEAD).
-Any production or test change after GREEN — review-driven fix, rebase, rework — makes
-the affected evidence stale:
+Evidence is tied to the code state it tested. Any production or test change after GREEN
+— review-driven fix, rebase, rework — makes the affected evidence stale:
 
-- Re-run the affected levels and record them anew; if the fix or its regression test
-  changed, RED→GREEN discipline applies again (the new test must fail on the old code
-  for the intended reason).
+- Record GREEN runs, suites, lint and build with `--head-bound` so the binding is
+  mechanical, not remembered. RED proofs and pre-fix baselines stay unbound — they are
+  supposed to describe older code.
+- After the change, `validation_report.py` marks head-bound entries **STALE** (exit 5)
+  and lists the files changed since — use that list to decide what to rerun.
+- Re-run the affected levels and record them anew at the new HEAD; if the fix or its
+  regression test changed, RED→GREEN discipline applies again (the new test must fail on
+  the old code for the intended reason).
 - Regenerate the Validation Report; never cite superseded artifacts as current.
 - Refresh the Change Walkthrough and re-check the understanding status if the change is
   more than cosmetic (SKILL.md § Contributor understanding).

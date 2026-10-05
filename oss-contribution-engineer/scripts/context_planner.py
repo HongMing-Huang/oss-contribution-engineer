@@ -88,8 +88,9 @@ def cmd_plan(repo: Path, goal_path: str, retrieval_path: str, top_r1: int) -> in
         alloc["history"] = 4000
     if task_type in ("code2test", "edit2ripple"):
         alloc["test"] = 6000
+    rd = retrieval.get("routing_decision", {})
     plan = {
-        "plan_version": 1,
+        "plan_version": 2,
         "goal_digest": goal.get("digest"),
         "task_type": task_type,
         "backend": retrieval.get("backend"),
@@ -102,6 +103,12 @@ def cmd_plan(repo: Path, goal_path: str, retrieval_path: str, top_r1: int) -> in
                       "trigger": "need origin/intent evidence (git log -p, linked PRs)"}],
         "token_allocation": alloc,
         "budgets": b,
+        "structural_quota": {
+            "max_share": rd.get("structural_max_share", 0.0),
+            "note": "structural-only candidates (repomap/graph, no direct evidence) "
+                    "may consume at most this share of packed files; direct evidence "
+                    "packs first — the no-regret guard",
+        },
         "excluded_candidates": excluded,
         "rules": ["do not read radius_2/3 without a recorded reason",
                   "every expansion names what R1 failed to establish",
@@ -135,12 +142,10 @@ def symbol_spans(text: str) -> list[tuple[str, int, int]]:
     return spans
 
 
-def cmd_pack(repo: Path, goal_path: str, plan_path: str) -> int:
-    goal = load_json(goal_path)
-    plan = load_json(plan_path)
-    scope_tokens = [s["path"] for s in goal.get("scope", [])]
-    qtokens = set()
-    for raw in (goal.get("intent", "") + " " + " ".join(goal.get("likely_domains", []))).lower().split():
+def goal_query_tokens(goal: dict, anchor_symbols: list[str]) -> set[str]:
+    qtokens: set[str] = set()
+    for raw in (goal.get("intent", "") + " " + " ".join(goal.get("likely_domains", []))
+                + " " + " ".join(anchor_symbols)).lower().split():
         # split on separators FIRST (before stripping) so "usage-line" yields
         # usage + line; stripping first glued them into an unmatchable token
         for w in re.findall(r"[a-z0-9]+", raw):
@@ -152,14 +157,45 @@ def cmd_pack(repo: Path, goal_path: str, plan_path: str) -> int:
             for chunk in re.findall(r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+", w):
                 if len(chunk) >= 3:
                     qtokens.add(chunk.lower())
+    return qtokens
+
+
+def build_pack(repo: Path, goal: dict, plan: dict, anchor_symbols: list[str] | None = None,
+               anchor_lines: dict[str, list[int]] | None = None) -> tuple[dict, list[dict]]:
+    """PACK phase (independent of RETRIEVE): choose what enters context under budget.
+
+    Ordering rules: direct-evidence candidates pack before structural-only ones
+    (no-regret guard continued from the router); structural-only candidates may fill
+    at most structural_quota.max_share of the packed files. Returns (pack, read_files).
+    """
+    anchor_symbols = anchor_symbols or []
+    anchor_lines = anchor_lines or {}
+    qtokens = goal_query_tokens(goal, anchor_symbols)
     src_budget = plan["token_allocation"]["source"]
     test_budget = plan["token_allocation"]["test"]
+
+    # direct-first ordering (stable within class by router rank)
+    r1 = plan.get("radius_1", [])
+    direct = [c for c in r1 if c.get("evidence_class", "direct") == "direct"]
+    structural = [c for c in r1 if c.get("evidence_class") == "structural"]
+    max_structural_files = -1 if plan.get("structural_quota", {}).get("max_share", 0) >= 1.0 \
+        else int(len(r1) * plan.get("structural_quota", {}).get("max_share", 0.0))
+    ordered = direct + structural
 
     source_ranges, test_ranges = [], []
     used_src = used_test = 0
     read_files = []
-    for cand in plan.get("radius_1", []):
+    structural_packed = 0
+    displaced_direct: list[str] = []
+    for cand in ordered:
         path = cand["path"]
+        is_structural_only = cand.get("evidence_class") == "structural"
+        if is_structural_only and max_structural_files >= 0 \
+                and structural_packed >= max_structural_files:
+            plan.setdefault("excluded_candidates", []).append(
+                {"path": path, "reason": "structural quota exhausted (max_share %s)"
+                 % plan.get("structural_quota", {}).get("max_share")})
+            continue
         p = repo / path
         if not p.is_file():
             continue
@@ -171,13 +207,22 @@ def cmd_pack(repo: Path, goal_path: str, plan_path: str) -> int:
             if used_test + est <= test_budget:
                 test_ranges.append({"path": path, "lines": "1-%d" % len(text.splitlines()),
                                     "why": cand.get("tier_reason", "test relation"),
+                                    "evidence": cand.get("evidence", []),
                                     "digest": digest})
                 used_test += est
+                if is_structural_only:
+                    structural_packed += 1
+                continue
+            plan.setdefault("excluded_candidates", []).append(
+                {"path": path, "reason": "test budget exhausted"})
             continue
         if used_src < src_budget:
             all_spans = symbol_spans(text)
+            path_lines = anchor_lines.get(path, [])
             matched = [(n, a, b2) for (n, a, b2) in all_spans
-                       if any(t and t in n.lower() for t in qtokens)]
+                       if any(t and t in n.lower() for t in qtokens)
+                       or n in anchor_symbols
+                       or any(a <= ln <= b2 for ln in path_lines)]
             chosen = matched or all_spans
             delivered = []
             for (name, a, b2) in chosen[:3]:
@@ -187,23 +232,38 @@ def cmd_pack(repo: Path, goal_path: str, plan_path: str) -> int:
                 used_src += span_tokens
                 why = "symbol span for %s — %s" % (name, cand.get("tier_reason", "router candidate"))
                 delivered.append({"path": path, "symbol": name, "lines": "%d-%d" % (a, b2),
-                                  "why": why, "digest": digest})
+                                  "why": why, "evidence": cand.get("evidence", []),
+                                  "digest": digest})
             source_ranges.extend(delivered)
-            if not delivered:
+            if delivered:
+                if is_structural_only:
+                    structural_packed += 1
+            elif cand.get("evidence_class", "direct") == "direct":
+                displaced_direct.append(path)
                 plan.setdefault("excluded_candidates", []).append(
                     {"path": path, "reason": "no span fits remaining source budget"})
         else:
+            if cand.get("evidence_class", "direct") == "direct":
+                displaced_direct.append(path)
             plan.setdefault("excluded_candidates", []).append(
                 {"path": path, "reason": "source budget exhausted (soft %d tokens)" % src_budget})
 
     pack = {
-        "pack_version": 1,
+        "pack_version": 2,
         "goal_digest": goal.get("digest"),
         "task_type": plan.get("task_type"),
+        "no_regret": {
+            "direct_first": True,
+            "structural_quota": plan.get("structural_quota", {}),
+            "displaced_direct": displaced_direct,
+            "note": "displaced_direct = direct-evidence candidates that lost their "
+                    "budget slot; non-empty means the no-regret guarantee is under "
+                    "budget pressure and the agent must widen budget or cut scope",
+        },
         "cognition": {"backend": plan.get("backend"),
                       "claims": [{"object": p, "claim": "see backend entry",
                                   "binding": {"path": p}}
-                                 for p in scope_tokens]},
+                                 for p in [s.get("path") for s in goal.get("scope", [])]]},
         "source_ranges": source_ranges,
         "structural": [],
         "tests": test_ranges,
@@ -217,12 +277,22 @@ def cmd_pack(repo: Path, goal_path: str, plan_path: str) -> int:
             "test_used_est": used_test, "test_budget": test_budget,
             "note": "est = chars/4; estimates, labeled as estimates",
         },
-        "provenance": {"plan": plan_path, "goal": goal_path,
+        "provenance": {"goal_digest": goal.get("digest"),
+                       "anchors": {"symbols": anchor_symbols,
+                                   "lines": anchor_lines},
                        "generated": datetime.now(timezone.utc).isoformat(),
                        "read_files": read_files},
     }
     body = {k: v for k, v in pack.items() if k != "pack_digest"}
     pack["pack_digest"] = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    return pack, read_files
+
+
+def cmd_pack(repo: Path, goal_path: str, plan_path: str, anchor_symbols: list[str],
+             anchor_lines: dict[str, list[int]]) -> int:
+    goal = load_json(goal_path)
+    plan = load_json(plan_path)
+    pack, _ = build_pack(repo, goal, plan, anchor_symbols, anchor_lines)
     print(json.dumps(pack, indent=2))
     return 0
 
@@ -238,6 +308,10 @@ def main() -> int:
     p_pack = sub.add_parser("pack")
     p_pack.add_argument("--goal", required=True)
     p_pack.add_argument("--plan", required=True)
+    p_pack.add_argument("--anchor-symbols", default="",
+                        help="comma-separated symbol names from trace frames / issue text")
+    p_pack.add_argument("--anchor-lines", default="",
+                        help="path:line pairs, comma-separated (e.g. src/x.rs:331,src/y.py:42)")
     args = ap.parse_args()
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
@@ -245,7 +319,17 @@ def main() -> int:
         return 3
     if args.cmd == "plan":
         return cmd_plan(repo, args.goal, args.retrieval, args.top_r1)
-    return cmd_pack(repo, args.goal, args.plan)
+    anchor_lines: dict[str, list[int]] = {}
+    for pair in args.anchor_lines.split(","):
+        if ":" in pair:
+            f, _, ln = pair.rpartition(":")
+            try:
+                anchor_lines.setdefault(f.strip(), []).append(int(ln))
+            except ValueError:
+                pass
+    return cmd_pack(repo, args.goal, args.plan,
+                    [s.strip() for s in args.anchor_symbols.split(",") if s.strip()],
+                    anchor_lines)
 
 
 if __name__ == "__main__":

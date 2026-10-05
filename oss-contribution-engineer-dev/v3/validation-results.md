@@ -202,3 +202,63 @@ plan-before-read), not token savings at this scale. The naive-baseline 89× figu
 demonstrates why whole-file reading is an anti-pattern, nothing more. The one measured
 tooling cost: the RepoMap prior needs task-aware hub penalties — an open routing-policy
 item, recorded with data.
+
+## 9. V4: adaptive routing + no-regret packing (2026-10-05, issue #7)
+
+Implemented and really executed:
+
+- **ROUTING_POLICIES**: per-workflow signal selection + RRF weights + structural
+  policy (`structural_max_share`, `structural_first`). Hybrid no longer merges
+  unconditionally; `--signals` remains as a recorded ablation override.
+- **Per-arm provenance**: every candidate carries `evidence_class`
+  (direct|structural) + structured `evidence` (symbol match exact/partial, graph
+  relation+distance, repomap centrality) + explainable reason phrase.
+- **No-regret guard (constructive)**: direct-first ordering + structural share cap;
+  a repomap hub cannot displace a direct hit by construction. PACK continues the
+  guard (direct packs first, structural within quota) and reports
+  `no_regret.displaced_direct` if budget pressure ever evicts direct evidence.
+- **RETRIEVE/PACK separation**: rank metrics vs BCY/packet metrics computed
+  independently; pack spans carry the candidate's evidence (provenance end-to-end).
+- **Anchored span refinement**: `--anchor-symbols/--anchor-lines` (trace frames) —
+  verified live: `write_usage 158-203` packed via anchor even when intent tokens
+  missed.
+- **9 regression tests** (`tests/test_pack_regressions.py`, all passing): late
+  symbol, usage-line normalization, same-name symbols, large-file span charging,
+  path-match-no-symbol, symbol-match-no-lexical, quota never displaces direct,
+  displaced-direct reporting, tokenizer split order.
+- **Eval upgrade**: BCY@4k/8k/16k, packet tokens, files delivered, gold displaced by
+  packing, latency, per-arm × per-type breakdown, and the ROUTING REGRET diagnostic.
+
+### Results — honest, including failures
+
+| Slice | Arm | MRR | Recall@5 | BCY@8k | displaced-gold | latency |
+|---|---|---|---|---|---|---|
+| click (4 seeds) | router(policy) | **0.523** | 0.625 | 0.625 | **0** | ~0.9 s |
+| click | lexical-only | 0.625 | 0.875 | 0.875 | 1 | ~1.0 s |
+| click | repomap-only | 0.252 | 0.750 | 0.250 | 2 | ~0.9 s |
+| fd (4 seeds) | router(policy) | best-of-arms | — | hub risk gone (guard) | — | — |
+| ARB slice (6) | router(policy) | **0.183** | 0.167 | **0.000** | 2 | **~54 s** |
+| ARB slice (6) | all other arms | 0.018–0.167 | ≤0.167 | **0.000** | 1–2 | ~50 s |
+
+Findings, no spinning:
+
+1. **Regret diagnostic works**: click regret mean 0.25 — comment2context policy
+   scores 0.0 where lexical-only scores 1.0 (regret 1.0), naming the exact bad prior.
+2. **The guard works where it can**: router displaced 0 gold by packing on click
+   (lexical-only displaced 1, repomap-only 2).
+3. **No universal winner**: lexical-only still beats the policy arm on click MRR and
+   Recall@5. No hybrid-superiority claim is made.
+4. **Scale failure, recorded not hidden**: on the ARB frozen slice (6 tasks,
+   6 repos, Python/Rust/Go/TS, SHA-verified base commits; edit2ripple absent from
+   v0_1 — recorded), EVERY arm scores BCY 0 at 4k/8k/16k with ~50 s/query. Gold
+   verified present in corpus — the failure is ranking depth + whole-file packing at
+   monorepo scale, not data. Regret degenerates to 0 when all arms fail (report
+   absolute scores alongside regret). Root causes and intended mitigations:
+   span-level packs + persistent cognition instead of per-run whole-repo scans.
+   Per-run corpus scans over 2.5–5.7k files at ~50 s are a defect; a persistent
+   index is open work.
+5. **Embedding remains UNAVAILABLE** (deliberate; no dependency added to fill the
+   ablation cell).
+
+Full rows: `eval/results/arb-slice-results.json`; slice manifest with base SHAs:
+`eval/tasks/arb-slice.jsonl.manifest.json`.

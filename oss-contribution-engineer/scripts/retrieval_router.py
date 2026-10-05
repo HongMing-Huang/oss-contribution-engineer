@@ -416,24 +416,97 @@ def signal_rankings(corpus: "Corpus", query: str, args) -> dict[str, list[str]]:
             "cognition": list(corpus.cognition.keys()) if corpus.cognition else []}
 
 
-TASK_PRIORS = {
-    "explore":        {"cognition": 1.5, "path": 1.2, "graph": 1.0, "repomap": 1.2},
-    "code2test":      {"test": 1.5, "symbol": 1.2, "lexical": 1.0, "repomap": 0.7},
-    "comment2context":{"symbol": 1.4, "path": 1.0, "lexical": 0.8, "repomap": 0.8},
-    "trace2code":     {"lexical": 1.5, "history": 1.2, "symbol": 1.0, "repomap": 0.8},
-    "edit2ripple":    {"graph": 1.5, "test": 1.2, "symbol": 1.0, "repomap": 0.8},
-    "issue2code":     {"lexical": 1.2, "symbol": 1.2, "cognition": 1.0, "repomap": 1.0},
-    "review":         {"graph": 1.2, "history": 1.0, "symbol": 1.0, "repomap": 1.0},
-    "bug_hunt":       {"history": 1.5, "lexical": 1.0, "test": 1.0, "repomap": 0.8},
+DIRECT_FAMILIES = {"lexical", "symbol", "test", "history", "cognition", "path"}
+STRUCTURAL_FAMILIES = {"repomap", "graph"}
+
+# Workflow-aware routing: each policy decides WHICH families run, their RRF weights,
+# and how structural-only candidates (repomap/graph with no direct evidence) are
+# treated. Priors are initial hypotheses derived from Agent Retrieval Bench
+# (arXiv 2607.24882) per-workflow results plus our own measured fd/click data; they
+# are hypotheses to validate via routing-regret reporting, not assumed constants.
+# The hub guard is constructive: unless a policy declares structural_first, direct
+# candidates always outrank structural-only ones, so a central hub can never
+# displace a direct lexical/symbol/test hit.
+ROUTING_POLICIES = {
+    "trace2code": {
+        "signals": ["lexical", "symbol", "history", "test"],
+        "weights": {"lexical": 1.5, "history": 1.2, "symbol": 1.0},
+        "structural": {"families": ["graph"], "max_share": 0.34},
+        "structural_first": False,
+        "prior_source": "ARB: trace2code favors lexical/RepoMap, embeddings weak; "
+                        "our fd data showed repomap hub displacement — graph allowed, "
+                        "capped, direct-first",
+    },
+    "code2test": {
+        "signals": ["test", "symbol", "lexical", "path"],
+        "weights": {"test": 1.5, "symbol": 1.2, "lexical": 1.0},
+        "structural": {"families": [], "max_share": 0.0},
+        "structural_first": False,
+        "prior_source": "ARB: code2test = test relations dominate",
+    },
+    "comment2context": {
+        "signals": ["symbol", "path", "lexical"],
+        "weights": {"symbol": 1.4, "path": 1.0, "lexical": 0.8},
+        "structural": {"families": [], "max_share": 0.0},
+        "structural_first": False,
+        "prior_source": "ARB winner was embedding-based; without embeddings, "
+                        "symbol+path neighborhood",
+    },
+    "edit2ripple": {
+        "signals": ["test", "symbol", "lexical", "path"],
+        "weights": {"test": 1.2, "symbol": 1.0, "lexical": 0.8},
+        "structural": {"families": ["graph"], "max_share": 0.5},
+        "structural_first": False,
+        "prior_source": "ripple = dependency expansion matters, generic centrality not",
+    },
+    "explore": {
+        "signals": ["cognition", "path", "lexical", "repomap"],
+        "weights": {"cognition": 1.5, "path": 1.2, "lexical": 1.0, "repomap": 1.2},
+        "structural": {"families": ["repomap"], "max_share": 0.6},
+        "structural_first": True,
+        "prior_source": "survey-shaped task: structural centrality may legitimately lead",
+    },
+    "issue2code": {
+        "signals": ["lexical", "symbol", "cognition", "history"],
+        "weights": {"lexical": 1.2, "symbol": 1.2, "cognition": 1.0},
+        "structural": {"families": ["graph"], "max_share": 0.25},
+        "structural_first": False,
+        "prior_source": "general localization mix; structure as capped support only",
+    },
+    "review": {
+        "signals": ["symbol", "history", "lexical"],
+        "weights": {"symbol": 1.2, "history": 1.0, "lexical": 1.0},
+        "structural": {"families": ["graph"], "max_share": 0.4},
+        "structural_first": False,
+        "prior_source": "review context = changed symbols + their history",
+    },
+    "bug_hunt": {
+        "signals": ["history", "lexical", "test"],
+        "weights": {"history": 1.5, "lexical": 1.0, "test": 1.0},
+        "structural": {"families": ["graph"], "max_share": 0.25},
+        "structural_first": False,
+        "prior_source": "hunting = recent-fix history + sibling tests",
+    },
 }
 
 
-def rrf_fuse(rankings: dict[str, list[str]], task_type: str, top_n: int = 40):
-    priors = TASK_PRIORS.get(task_type, {})
+def classify_candidates(rankings: dict[str, list[str]], top_n: int = 40) -> dict[str, str]:
+    """direct = hit by ≥1 query-specific family; structural = repomap/graph only."""
+    cls: dict[str, str] = {}
+    for family, ranking in rankings.items():
+        tag = "direct" if family in DIRECT_FAMILIES else "structural"
+        for p in ranking[:top_n]:
+            if cls.get(p) != "direct":
+                cls[p] = tag
+    return cls
+
+
+def rrf_fuse(rankings: dict[str, list[str]], weights: dict[str, float],
+             top_n: int = 40):
     fused: dict[str, float] = defaultdict(float)
     why: dict[str, list[str]] = defaultdict(list)
     for family, ranking in rankings.items():
-        w = priors.get(family, 1.0)
+        w = weights.get(family, 1.0)
         for i, path in enumerate(ranking[:top_n]):
             fused[path] += w / (RRF_K + i + 1)
             if len(why[path]) < 4:
@@ -441,9 +514,50 @@ def rrf_fuse(rankings: dict[str, list[str]], task_type: str, top_n: int = 40):
     return sorted(fused.items(), key=lambda kv: -kv[1]), why
 
 
+def build_evidence(path: str, rankings: dict[str, list[str]], corpus: Corpus,
+                   qidents: list[str], graph_via: dict[str, str],
+                   graph_depth: dict[str, int], why: list[str]) -> list[dict]:
+    """Structured per-arm evidence: why this candidate exists. Ranking signals,
+    not probabilities."""
+    ev = []
+    for family, ranking in rankings.items():
+        if path in ranking[:40]:
+            rank = ranking.index(path) + 1
+            item = {"family": family, "rank": rank}
+            if family == "symbol":
+                names = {s.lower() for s, _ in corpus.symbols.get(path, [])}
+                exact = any(q.lower() in names for q in qidents)
+                item["match"] = "exact" if exact else "partial"
+            elif family == "graph":
+                item["relation"] = graph_via.get(path, "expanded")
+                item["distance"] = graph_depth.get(path)
+            elif family == "repomap":
+                n = len(ranking)
+                item["centrality"] = "high" if rank <= max(3, n // 20) else (
+                    "mid" if rank <= max(5, n // 5) else "low")
+                item["note"] = "supporting evidence only unless policy is structural_first"
+            ev.append(item)
+    return ev
+
+
+def reason_phrase(evidence: list[dict]) -> str:
+    parts = []
+    for e in evidence:
+        if e["family"] == "symbol":
+            parts.append("%s symbol match" % e["match"])
+        elif e["family"] == "graph":
+            parts.append("direct dependency (distance %s)" % e.get("distance"))
+        elif e["family"] == "repomap":
+            parts.append("%s centrality (support)" % e["centrality"])
+        else:
+            parts.append("%s hit" % e["family"])
+    return " + ".join(parts) or "fused"
+
+
 def graph_expand(corpus: Corpus, seeds: list[tuple[str, float]], max_depth: int,
-                 max_nodes: int) -> list[tuple[str, float, str]]:
-    """Priority-queue expansion over imports/tests edges. Never BFS; pruned by score."""
+                 max_nodes: int) -> list[tuple[str, float, str, int]]:
+    """Priority-queue expansion over imports/tests edges. Never BFS; pruned by score.
+    Returns (path, score, via, depth)."""
     import heapq
     prod_by_stem = defaultdict(list)
     for rel in corpus.files:
@@ -455,25 +569,25 @@ def graph_expand(corpus: Corpus, seeds: list[tuple[str, float]], max_depth: int,
     out = []
     while frontier and len(out) < max_nodes:
         score, depth, path, via = heapq.heappop(frontier)
-        out.append((path, score, via))
+        out.append((path, score, via, depth))
         if depth >= max_depth:
             continue
         neighbors = []
         for imp in corpus.imports.get(path, []):
             stem = imp.rsplit("/", 1)[-1].split(".")[0]
-            neighbors.extend(("imports", p) for p in prod_by_stem.get(stem, []))
+            neighbors.extend(("imports %s" % module_stem(stem), p) for p in prod_by_stem.get(stem, []))
         stem = module_stem(path)
         for t in corpus.tests_of(path):
-            neighbors.append(("tests", t))
+            neighbors.append(("tests %s" % stem, t))
         for edge, n in neighbors:
             if n in seen:
                 continue
             seen.add(n)
-            parent_score = dict((p, s) for p, s, _ in out).get(path, 0.1)
+            parent_score = dict((p, s) for p, s, _, _ in out).get(path, 0.1)
             nscore = parent_score * (0.5 ** (depth + 1))
             if nscore > 0.02:
-                heapq.heappush(frontier, (nscore, depth + 1, n, "%s from %s" % (edge, path)))
-    extra = [(p, s, v) for p, s, v in out if p not in {x for x, _ in seeds}]
+                heapq.heappush(frontier, (nscore, depth + 1, n, edge))
+    extra = [(p, s, v, d) for p, s, v, d in out if p not in {x for x, _ in seeds}]
     return extra
 
 
@@ -487,19 +601,95 @@ def route(repo_path: str, query: str, task_type: str, signals: list[str] | None,
     if not corpus.files:
         return {"backend": corpus.backend, "candidates": [], "abstention":
                 {"returned": False, "factors": {"reason": "no files scanned"}}, "limits": []}
-    rankings = signal_rankings(corpus, query, None)
-    if signals:
-        rankings = {k: v for k, v in rankings.items() if k in signals}
-    fused, why = rrf_fuse(rankings, task_type)
-    expanded = graph_expand(corpus, fused[:5], max_depth, max_nodes) if fused else []
-    graph_rank = {p: i for i, (p, _, _) in enumerate(sorted(expanded, key=lambda x: -x[1]))}
-    merged = dict(fused)
-    for p, s, _ in expanded:
-        w = TASK_PRIORS.get(task_type, {}).get("graph", 1.0)
-        merged[p] = merged.get(p, 0.0) + w / (RRF_K + graph_rank.get(p, 20) + 1)
-        why.setdefault(p, []).append("graph:%s" % _[:40])
+    t0 = datetime.now()
+    all_rankings = signal_rankings(corpus, query, None)
 
-    ranked = sorted(merged.items(), key=lambda kv: -kv[1])[:top_k]
+    # --- routing policy: which families run this workflow? --------------------
+    policy = ROUTING_POLICIES.get(task_type, ROUTING_POLICIES["issue2code"])
+    ablation_override = bool(signals)
+    if ablation_override:
+        # explicit arm override (evaluation ablations): merge everything requested,
+        # legacy behavior — routing policy bypassed ON PURPOSE and recorded
+        run_families = [f for f in all_rankings if f in signals]
+        weights = {f: 1.0 for f in run_families}
+        structural_cfg = {"families": [f for f in signals if f in STRUCTURAL_FAMILIES],
+                          "max_share": 1.0}
+        structural_first = False
+        routing_mode = "ablation-override"
+    else:
+        run_families = [f for f in all_rankings if f in policy["signals"]]
+        weights = {f: policy["weights"].get(f, 1.0) for f in run_families}
+        structural_cfg = policy["structural"]
+        structural_first = policy["structural_first"]
+        routing_mode = "policy:%s" % task_type
+    rankings = {f: all_rankings[f] for f in run_families}
+
+    qidents = [t for t in dict.fromkeys(
+        raw for raw in TOKEN_RE.findall(query) if len(raw) >= 4 and any(c.isalpha() for c in raw))]
+    fused, why = rrf_fuse(rankings, weights)
+    expanded = graph_expand(corpus, fused[:5], max_depth, max_nodes) \
+        if (fused and "graph" in structural_cfg["families"]) else []
+    graph_rank = {p: i for i, (p, _, _, _) in enumerate(sorted(expanded, key=lambda x: -x[1]))}
+    merged = dict(fused)
+    for p, s, via, depth in expanded:
+        w = weights.get("graph", 1.0)
+        merged[p] = merged.get(p, 0.0) + w / (RRF_K + graph_rank.get(p, 20) + 1)
+        why.setdefault(p, []).append("graph distance %d via %s" % (depth, via))
+
+    ranked_all = sorted(merged.items(), key=lambda kv: -kv[1])
+    klass = classify_candidates(rankings | ({"graph": [p for p, _, _, _ in expanded]} if expanded else {}))
+
+    # --- no-regret guard: structural candidates fill only REMAINING slots ------
+    # (constructive guarantee: a repomap/graph-only hub can never displace a
+    #  direct lexical/symbol/test hit unless the policy declares structural_first)
+    direct_order = [(p, s) for p, s in ranked_all if klass.get(p) == "direct"]
+    structural_order = [(p, s) for p, s in ranked_all if klass.get(p) == "structural"]
+    if structural_first:
+        final_order = structural_order + direct_order
+        guard = "structural_first policy (explore): centrality may lead"
+    else:
+        final_order = direct_order + structural_order
+        guard = ("direct-first: structural-only candidates fill remaining slots; "
+                 "displacement of direct evidence is impossible by construction")
+    ranked = final_order[:top_k]
+    structural_admitted = sum(1 for p, _ in ranked if klass.get(p) == "structural")
+    max_structural = int(math.ceil(top_k * structural_cfg["max_share"])) \
+        if structural_cfg["max_share"] < 1.0 else top_k
+    demoted = []
+    if structural_admitted > max_structural and not structural_first:
+        # enforce share cap: keep the first max_structural structural candidates
+        new_ranked, seen_struct = [], 0
+        for p, s in ranked:
+            if klass.get(p) == "structural":
+                seen_struct += 1
+                if seen_struct > max_structural:
+                    demoted.append(p)
+                    continue
+            new_ranked.append((p, s))
+        # refill freed slots from structural_order beyond current cut
+        present = {p for p, _ in new_ranked}
+        for p, s in structural_order:
+            if len(new_ranked) >= top_k:
+                break
+            if p not in present and p not in demoted:
+                new_ranked.append((p, s))
+        ranked = new_ranked[:top_k]
+    routing_decision = {
+        "mode": routing_mode,
+        "policy_signals": policy["signals"] if not ablation_override else run_families,
+        "weights": weights,
+        "guard": guard,
+        "structural_max_share": structural_cfg["max_share"],
+        "structural_admitted": sum(1 for p, _ in ranked if klass.get(p) == "structural"),
+        "direct_in_topk": sum(1 for p, _ in ranked if klass.get(p) == "direct"),
+        "demoted_over_quota": demoted,
+        "prior_source": policy["prior_source"] if not ablation_override else
+                        "explicit --signals ablation; priors bypassed",
+        "latency_ms": int((datetime.now() - t0).total_seconds() * 1000),
+    }
+
+    graph_via = {p: v for p, _, v, _ in expanded}
+    graph_depth = {p: d for p, _, _, d in expanded}
     fam_tops = {f: (v[0] if v else None) for f, v in rankings.items()}
     abstention = {
         "returned": bool(ranked),
@@ -515,11 +705,20 @@ def route(repo_path: str, query: str, task_type: str, signals: list[str] | None,
     candidates = []
     for i, (path, score) in enumerate(ranked, 1):
         text = corpus.files[path]
+        evidence = build_evidence(path, rankings, corpus, qidents,
+                                  graph_via, graph_depth, why.get(path, []))
+        if any(e["family"] == "graph" for e in evidence) and path in graph_via:
+            for e in evidence:
+                if e["family"] == "graph":
+                    e["relation"] = graph_via[path]
         candidates.append({
             "rank": i, "path": path,
             "rrf": round(score, 5),
-            "signals": {f: (rankings[f].index(path) + 1) for f in rankings if path in rankings[f][:top_k]},
-            "reason": "; ".join(why.get(path, [])) or "fused",
+            "evidence_class": klass.get(path, "structural"),
+            "evidence": evidence,
+            "signals": {f: (rankings[f].index(path) + 1) for f in rankings
+                        if path in rankings[f][:top_k]},
+            "reason": reason_phrase(evidence) or "; ".join(why.get(path, [])) or "fused",
             "radius": 1 if i <= max(1, top_k // 2) else 2,
             "is_test": is_test_path(path),
             "est_tokens": len(text) // 4,
@@ -529,6 +728,7 @@ def route(repo_path: str, query: str, task_type: str, signals: list[str] | None,
         "task_type": task_type,
         "query": query,
         "generated": datetime.now(timezone.utc).isoformat(),
+        "routing_decision": routing_decision,
         "candidates": candidates,
         "abstention": abstention,
         "limits": ["history window: 200 commits", "max file bytes: %d" % MAX_FILE_BYTES,
@@ -536,7 +736,7 @@ def route(repo_path: str, query: str, task_type: str, signals: list[str] | None,
                    % (max_depth, max_nodes)],
         "provenance": {"families_run": list(rankings.keys()),
                        "files_scanned": len(corpus.files),
-                       "generated_by": "retrieval_router.py v1"},
+                       "generated_by": "retrieval_router.py v2 (routing policies + no-regret guard)"},
     }
 
 
@@ -545,7 +745,7 @@ def main() -> int:
     ap.add_argument("repo")
     ap.add_argument("query")
     ap.add_argument("--task-type", default="issue2code",
-                    choices=list(TASK_PRIORS))
+                    choices=list(ROUTING_POLICIES))
     ap.add_argument("--signals", help="comma subset: lexical,path,symbol,test,history,cognition,graph")
     ap.add_argument("--top-k", type=int, default=10)
     ap.add_argument("--max-depth", type=int, default=2)

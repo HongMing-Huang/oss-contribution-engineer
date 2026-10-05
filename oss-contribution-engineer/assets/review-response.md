@@ -10,14 +10,16 @@
 
 ## Comment-by-comment worksheet
 
-| # | Category | Concern (paraphrase + link) | Interpretation | Evidence checked | Action | Response draft |
-|---|----------|-----------------------------|----------------|------------------|--------|----------------|
-| 1 | correctness / design / scope / test coverage / compatibility / style / documentation / maintainability / question | | what it actually challenges | source, tests, docs, manifest re-checked | CHANGE / JUSTIFY / QUESTION | concise reply, evidence-linked |
+| # | Category | Concern (paraphrase + link) | Code context | Assessment | Evidence checked | Action | Response draft |
+|---|----------|-----------------------------|--------------|------------|------------------|--------|----------------|
+| 1 | correctness / design / scope / test coverage / compatibility / style / documentation / maintainability / question | | which code/design assumption it refers to | agree / partially / disagree + why | source, tests, docs, manifest re-checked | CHANGE / JUSTIFY / QUESTION | concise reply, evidence-linked |
 
-<!-- Use one row per meaningful comment. Silence is not an answer, and neither is
-     automatic agreement: if the implementation is technically justified, say so with
-     evidence and respectfully (kernel: respond politely and address the problems;
-     Git: defend your design decisions on the list first). -->
+<!-- Fill the Assessment column BEFORE drafting any response, and walk the contributor
+     through the row (they must understand the response before it goes upstream). Use
+     silence is not an answer, and neither is automatic agreement: if the implementation
+     is technically justified, say so with evidence and respectfully (kernel: respond
+     politely and address the problems; Git: defend your design decisions on the list
+     first). -->
 
 ## What changed in v<N>
 
@@ -30,9 +32,18 @@
 |-----------|----------------------------------------|----------|
 
 ## Stale-validation record
-<!-- After any code change: which validations were re-run (RED→GREEN if the fix or its
-     test changed), which remain valid, validation report regenerated — superseded
-     evidence never cited as current -->
+<!-- After any code/test change: validation_report.py marks head-bound evidence STALE
+     (exit 5) — list what was re-run and re-recorded at the new HEAD (RED→GREEN again if
+     the fix or its test changed), and confirm superseded evidence is not cited as
+     current -->
+
+## Rereview signal
+<!-- How readiness was signaled (re-request / PTAL comment) and when — required for
+     READY_FOR_REREVIEW; never assume reviewers noticed the push -->
+
+## Upstream outcome (terminal — from upstream_state.py on captured PR state, never self-report)
+<!-- MERGED (the only success) / CLOSED_NOT_MERGED / SUPERSEDED / WITHDRAWN /
+     DROPPED_OR_STALE — plus the facts behind the classification and the date -->
 
 ## Iteration summary (goes at the top of the new PR revision / cover letter)
 <!-- Reviewer concern → what changed → evidence → what did not change and why.
