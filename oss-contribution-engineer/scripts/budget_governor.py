@@ -96,5 +96,78 @@ def main() -> int:
     return 1
 
 
+# --------------------------------------------------------------------- governing
+# V5: a real bounded repack loop — pack → audit → prune → repack → ACCEPT/BLOCKED.
+# Pruning drops delivered source spans from the end (least provenance first, then
+# last delivered) until within the soft budget. Hard-budget crossings and protected
+# items are never silently resolved: BLOCKED requires a human decision.
+
+GOV_SOFT = {"source": 12000, "test": 4000, "cognition": 4000,
+            "history": 2000, "spec": 2000}
+DIRECT_FAMILIES = {"lexical", "symbol", "test", "history", "cognition", "path"}
+
+
+def _span_priority(index: int, span: dict) -> tuple:
+    """Lower sorts first (pruned first). Spans whose evidence lacks a direct
+    family (structural-only) prune before direct-evidence spans; within a class,
+    later-delivered prunes before earlier (index descending)."""
+    ev = span.get("evidence") or []
+    has_direct = any(e.get("family") in DIRECT_FAMILIES for e in ev)
+    return (0 if has_direct else 1, index)
+
+
+def govern_pack(pack: dict, max_iterations: int = 12) -> dict:
+    """Bounded repack loop. Returns {decision, iterations, actions, audit}.
+    ACCEPT only when every category is within its soft budget; BLOCKED when
+    pruning cannot get there (human decision required)."""
+    actions: list[str] = []
+    iterations = 0
+    for _ in range(max_iterations):
+        iterations += 1
+        ta = pack.get("token_accounting", {})
+        over = [c for c in GOV_SOFT
+                if ta.get("%s_used_est" % c, 0) > GOV_SOFT[c]]
+        if not over:
+            return {"decision": "ACCEPT", "iterations": iterations,
+                    "actions": actions,
+                    "audit": "all categories within soft budgets"}
+        if "source" in over and pack.get("source_ranges"):
+            spans = pack["source_ranges"]
+            order = sorted(range(len(spans)),
+                           key=lambda i: _span_priority(i, spans[i]),
+                           reverse=True)
+            idx = order[0]
+            dropped = spans.pop(idx)
+            ev = dropped.get("evidence") or []
+            has_direct = any(e.get("family") in DIRECT_FAMILIES for e in ev)
+            b = int((dropped.get("lines", "0-0").partition("-"))[2] or 0)
+            span_tokens = max(1, b * 40 // 4)
+            ta["source_used_est"] = max(0, ta.get("source_used_est", 0) - span_tokens)
+            pack.setdefault("excluded", []).append(
+                {"path": dropped.get("path"), "symbol": dropped.get("symbol"),
+                 "reason": "pruned by budget governor (span %s, %s evidence)"
+                           % (dropped.get("lines"),
+                              "direct" if has_direct else "structural-only")})
+            if has_direct:
+                actions.append("pruned DIRECT span %s:%s — report to user; "
+                               "no_regret.displaced_direct updated"
+                               % (dropped.get("path"), dropped.get("lines")))
+                pack.setdefault("no_regret", {}).setdefault(
+                    "displaced_direct", []).append(dropped.get("path"))
+            else:
+                actions.append("pruned structural-only span %s:%s"
+                               % (dropped.get("path"), dropped.get("lines")))
+        else:
+            break
+    ta = pack.get("token_accounting", {})
+    still_over = [c for c in GOV_SOFT if ta.get("%s_used_est" % c, 0) > GOV_SOFT[c]]
+    if still_over:
+        return {"decision": "BLOCKED", "iterations": iterations, "actions": actions,
+                "audit": "pruning exhausted; still over soft budget: %s — "
+                         "widen the budget or cut scope with the user" % still_over}
+    return {"decision": "ACCEPT", "iterations": iterations, "actions": actions,
+            "audit": "within soft budgets after %d iteration(s)" % iterations}
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -174,7 +174,7 @@ def main() -> int:
     p.add_argument("--goal-digest")
     p.add_argument("--repository")
     p.add_argument("--backend", default="LIGHTWEIGHT_FALLBACK",
-                   choices=["AOCI_NATIVE", "NATIVE_PROJECT_MEMORY", "LIGHTWEIGHT_FALLBACK"])
+                   choices=["AOCI_FILE", "NATIVE_PROJECT_MEMORY", "LIGHTWEIGHT_FALLBACK"])
     p.add_argument("--backend-identity")
     p.add_argument("--aligned", choices=["aligned", "drifted", "stale", "unverified", "absent"])
     p.add_argument("--next-action")

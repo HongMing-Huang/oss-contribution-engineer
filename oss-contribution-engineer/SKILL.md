@@ -20,6 +20,29 @@ the scarcest resource. It is not an "auto-generate PRs" skill.
 already fixed, duplicated, or a design question, ending with that conclusion and the
 evidence behind it is a completed run — often the best possible run.
 
+## Runtime (invoke this; do not re-derive the workflow from memory)
+
+`scripts/contribution_session.py` is the executable spine. It persists one session
+record (`.oss-contrib-evidence/session.json`), knows which evidence exists, and
+**refuses illegal operations with a non-zero exit** — you cannot advance the state
+machine, edit production code, or reach PR_READY without the machine evidence the
+gates require, and stale head-bound validation mechanically blocks advancement.
+
+```bash
+python3 <skill-dir>/scripts/contribution_session.py <repo> init --task-id <id> --goal <contract.json>
+python3 <skill-dir>/scripts/contribution_session.py <repo> status            # state + gate gaps + legal next
+python3 <skill-dir>/scripts/contribution_session.py <repo> advance --to <STATE>
+```
+
+Other commands: `set-authority` (grants REQUIRE --by-user + --evidence-ref),
+`record` (recon/dedupe/walkthrough/scope-audit/patch-intent/plan/pack/receipt),
+`set-classification`, `set-understanding`, `upstream --pr-json`, `reconstruct`.
+Capability claims are classified in `CAPABILITIES.json` — never describe ADVISORY
+behavior as ENFORCED. **Where human judgment remains required** (the runtime cannot
+decide these): reading repo-local rules and judging conflicts, judging whether a bug
+is real, choosing among routing/patching strategies, contributor-understanding
+conversations, anything REMOTE_WRITE, and any security finding.
+
 ## Hard rules
 
 These override convenience, and repository-local rules (discovered in recon) override
@@ -224,7 +247,7 @@ proves, tests verify, history explains.** Understanding is hierarchical (L0 proj
 L1 subsystem → L2 component → L3 object → L4 current source); a task starts at L0/L1
 and descends only through relevant areas.
 
-1. **Backend** (from recon): AOCI_NATIVE when `aoci.*.txt` volumes exist and sampled
+1. **Backend** (from recon): AOCI_FILE when `aoci.*.txt` volumes exist and sampled
    entries re-hash aligned against `.aoci/baseline.json`; NATIVE_PROJECT_MEMORY when
    this skill's persisted profile/receipts exist; else LIGHTWEIGHT_FALLBACK. Never
    regenerate a whole-repo semantic index when an aligned AOCI index exists; cognition
@@ -415,7 +438,8 @@ ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/goal_compiler.py | Goal Contract + Goal Card; done_when observability gate; hypothesis records | none |
 | scripts/retrieval_router.py | hybrid retrieval (lexical/path/symbol/test/history/cognition/graph/repomap-PageRank), RRF fusion, abstention report; AOCI detection + alignment | none |
 | scripts/context_planner.py | Task Context Plan + bounded Context Pack of symbol spans with digests | none |
-| scripts/budget_governor.py | token budget accounting; soft/hard thresholds; ordered remediation actions | none |
+| scripts/contribution_session.py | V5 runtime spine: persisted session state, mechanically gated transitions, authority grants, upstream classification, reconstruct | none |
+| scripts/budget_governor.py | govern loop: pack→audit→prune→repack→ACCEPT/BLOCKED with displaced_direct reporting | none |
 | scripts/cognition_receipt.py | Task Cognition Receipt: open/record-read/verify (drift detection)/close/reconstruct | none |
 | scripts/retrieval_eval.py | Recall@K, MRR, BCY@B, precision, line metrics; per-task-type + signal ablation; ROUTING REGRET diagnostic | none |
 | scripts/build_arb_slice.py | freeze a small Agent Retrieval Bench slice into task JSONL (records base SHAs; eval tooling) | none — slice source fetched separately |

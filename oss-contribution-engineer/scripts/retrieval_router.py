@@ -137,7 +137,7 @@ def detect_backend(repo: Path) -> dict:
     mem = (repo / ".oss-contrib-evidence" / "goals").exists()
     if aoci:
         state, detail = aoci_alignment(repo)
-        return {"kind": "AOCI_NATIVE", "identity": "aoci volumes", "aligned_state": state,
+        return {"kind": "AOCI_FILE", "identity": "aoci volumes (file parser; no MCP runtime integration)", "aligned_state": state,
                 "detail": detail}
     if mem:
         return {"kind": "NATIVE_PROJECT_MEMORY", "identity": "goals/receipts", "aligned_state": "absent",
@@ -218,7 +218,7 @@ class Corpus:
         self.symbols: dict[str, list[tuple[str, int]]] = {}
         self.imports: dict[str, list[str]] = {}
         self.backend = detect_backend(repo)
-        self.cognition = parse_aoci_entries(repo) if self.backend["kind"] == "AOCI_NATIVE" else {}
+        self.cognition = parse_aoci_entries(repo) if self.backend["kind"] == "AOCI_FILE" else {}
         for rel, text in walk(repo):
             self.files[rel] = text
             self.tokens[rel] = Counter(tokenize(text))

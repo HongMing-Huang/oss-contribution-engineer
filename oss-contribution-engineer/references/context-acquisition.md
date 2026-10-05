@@ -22,7 +22,7 @@ A task begins at L0/L1 and descends only through relevant areas.
 
 ## Cognition backends (selected at recon, re-validated per receipt)
 
-1. **AOCI_NATIVE** — `aoci.txt`/`aoci.meta.txt`/`aoci.code.txt` volumes present AND
+1. **AOCI_FILE** — `aoci.txt`/`aoci.meta.txt`/`aoci.code.txt` volumes present AND (file-parser compatibility only; AOCI_RUNTIME_INTEGRATION — MCP rules/overview/search/get-entries — is UNIMPLEMENTED, see CAPABILITIES.json)
    alignment check passes (sampled entries re-hashed vs `.aoci/baseline.json`).
    Provides architecture, responsibilities, strong relations, contracts, high-entropy
    constraints. If drifted/stale → usable as a *map*, never as truth.
@@ -41,6 +41,16 @@ enough enclosing context for: signature, call assumptions, error handling, local
 invariants, nearby tests. `cognition_receipt.py verify` re-hashes recorded reads — a
 CHANGED verdict invalidates every cached claim about that file (mixing obsolete source
 with current source is an anti-pattern).
+
+## Graph relations actually implemented (scope statement)
+
+The structural layer produces exactly three relation kinds: **imports** (regex
+import/include scans), **source↔test relations** (naming conventions + import scans),
+and a **RepoMap-style PageRank structural prior** over those edges. It does NOT
+produce calls, references, inheritance, or runtime dependency graphs — those are
+UNIMPLEMENTED (see CAPABILITIES.json). If deeper relations are needed later, prefer
+an adapter to LSP/SCIP/Serena or an external graph backend over more fragile regex
+parsing.
 
 ## Progressively: the radius discipline
 

@@ -52,7 +52,7 @@ and open the reply with `RESULT RECONSTRUCTED ... NEXT ...`.
 ## Task Cognition Receipt
 
 ```bash
-python3 <skill-dir>/scripts/cognition_receipt.py <repo> open --task-id <id> --goal-digest <digest> [--backend AOCI_NATIVE]
+python3 <skill-dir>/scripts/cognition_receipt.py <repo> open --task-id <id> --goal-digest <digest> [--backend AOCI_FILE]
 python3 <skill-id>/scripts/cognition_receipt.py <repo> record-read --task-id <id> --ranges "325-350" --why "..." src/walk.rs
 python3 <skill-dir>/scripts/cognition_receipt.py <repo> verify   --task-id <id>   # re-hash: CURRENT/CHANGED/DELETED
 python3 <skill-dir>/scripts/cognition_receipt.py <repo> close    --task-id <id> --unresolved ... --next-action ...

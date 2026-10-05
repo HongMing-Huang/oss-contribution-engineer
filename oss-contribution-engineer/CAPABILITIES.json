@@ -1,0 +1,91 @@
+{
+  "ledger_version": 1,
+  "updated": "2026-10-05",
+  "rule": "README and SKILL.md derive their claims from this file. ADVISORY must never be described as ENFORCED.",
+  "capabilities": {
+    "state_machine": {
+      "status": "ENFORCED",
+      "evidence": "scripts/contribution_session.py: linear gates, objective machine evidence only, illegal transitions exit 1"
+    },
+    "permissions": {
+      "status": "ENFORCED",
+      "evidence": "session authority gates: PATCH requires granted worktree_edit, IN_REVIEW requires granted remote_write; grants require --by-user + --evidence-ref"
+    },
+    "remote_write_control": {
+      "status": "ENFORCED",
+      "evidence": "session refuses IN_REVIEW without a captured upstream PR identity; no script posts anything"
+    },
+    "source_read_provenance": {
+      "status": "IMPLEMENTED",
+      "evidence": "cognition_receipt record-read binds sha256 per read; verify flags CURRENT/CHANGED/DELETED; GREEN staleness blocks advancement"
+    },
+    "context_budget": {
+      "status": "ENFORCED",
+      "evidence": "budget_governor.govern_pack: bounded pack->audit->prune->repack->ACCEPT/BLOCKED loop; direct-span pruning reports displaced_direct"
+    },
+    "retrieval_routing": {
+      "status": "IMPLEMENTED",
+      "evidence": "ROUTING_POLICIES per workflow; --signals override recorded as ablation; priors validated via ROUTING REGRET, not assumed"
+    },
+    "no_regret_packing": {
+      "status": "IMPLEMENTED",
+      "evidence": "direct-first ordering + structural share cap (constructive); pack.no_regret.displaced_direct reporting"
+    },
+    "span_refinement": {
+      "status": "IMPLEMENTED",
+      "evidence": "whole-file symbol scan + anchor symbols/lines; regression tests cover late symbols, same-name, large files"
+    },
+    "evidence_witnessing": {
+      "status": "ENFORCED",
+      "evidence": "results exist only via evidence_manifest record (exit-code witnessed, sha256 artifacts) or explicit record-skip with reason"
+    },
+    "stale_validation_blocking": {
+      "status": "ENFORCED",
+      "evidence": "validation_report STALE (head-bound recorded at other HEAD) blocks CONTRIBUTOR_UNDERSTANDING and PR_READY gates"
+    },
+    "duplicate_work_check": {
+      "status": "ADVISORY",
+      "evidence": "duplicate_work_scan collects evidence and the session records classification, but nothing mechanically proves the agent ran the scan before PROVE"
+    },
+    "contributor_understanding": {
+      "status": "ADVISORY",
+      "evidence": "session records the status and refuses UNDERSTOOD without --confirmed-by, but cannot verify the human actually understands"
+    },
+    "upstream_lifecycle": {
+      "status": "IMPLEMENTED",
+      "evidence": "upstream_state classify() from captured JSON: MERGED is the only success; capture itself is manual (ADVISORY)"
+    },
+    "security_stop": {
+      "status": "ADVISORY",
+      "evidence": "SKILL.md hard rule 9 + recon SECURITY.md step; no mechanical detector of security findings"
+    },
+    "aoci_file_compatibility": {
+      "status": "IMPLEMENTED",
+      "evidence": "retrieval_router parses aoci.*.txt FRAS volumes read-only with sampled baseline alignment check; degrades to unverified honestly"
+    },
+    "aoci_runtime_integration": {
+      "status": "UNIMPLEMENTED",
+      "evidence": "no MCP/CLI calls to an AOCI runtime (rules/overview/search/get-entries); the file parser is the fallback path and is named AOCI_FILE"
+    },
+    "graph_imports": {
+      "status": "IMPLEMENTED",
+      "evidence": "regex import/include scan -> importer->imported edges"
+    },
+    "graph_source_test_relations": {
+      "status": "IMPLEMENTED",
+      "evidence": "naming conventions + import scan -> production<->test edges"
+    },
+    "graph_pagerank_prior": {
+      "status": "IMPLEMENTED",
+      "evidence": "power-iteration PageRank with query personalization (repomap signal)"
+    },
+    "graph_calls_references_inheritance": {
+      "status": "UNIMPLEMENTED",
+      "evidence": "no call/reference/inheritance edges are produced; prefer LSP/SCIP/Serena adapters over more regex"
+    },
+    "embedding_retrieval": {
+      "status": "UNAVAILABLE",
+      "evidence": "deliberate: no model dependency; pluggable arm documented, never filled to complete an ablation table"
+    }
+  }
+}

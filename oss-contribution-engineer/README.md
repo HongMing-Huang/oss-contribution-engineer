@@ -100,6 +100,26 @@ Each transition has entry/exit gates (see `SKILL.md`). A gate failure is a succe
 outcome of the skill: INVALID, ALREADY_FIXED, DUPLICATE, UNCONFIRMED, DESIGN_QUESTION,
 TOO_LARGE — each is a conclusion with evidence, not a failure to produce a patch.
 
+## Runtime and capability status (V5)
+
+The state machine is no longer prose: `scripts/contribution_session.py` is the
+executable spine. It composes the existing scripts, persists one session record
+(`.oss-contrib-evidence/session.json`), and **refuses illegal transitions with a
+non-zero exit** — gates read only machine artifacts (goal contract, evidence
+manifest, captured PR JSON), never markdown reports. Stale head-bound evidence
+mechanically blocks advancement; `budget_governor.py govern` runs a bounded
+pack→audit→prune→repack→ACCEPT/BLOCKED loop.
+
+Every capability claim is classified in [`CAPABILITIES.json`](CAPABILITIES.json)
+as ENFORCED, IMPLEMENTED, ADVISORY, EXPERIMENTAL, or UNIMPLEMENTED — this README
+derives its claims from that ledger. Notably: the state machine, permissions,
+evidence witnessing, stale-blocking, and budget governing are ENFORCED;
+duplicate-work checking and the security stop are ADVISORY (they guide, they
+cannot mechanically prove); AOCI integration is FILE_COMPATIBILITY only
+(runtime/MCP integration is UNIMPLEMENTED); call/reference/inheritance graphs are
+UNIMPLEMENTED (imports + source↔test relations + PageRank is what exists);
+embeddings are deliberately UNAVAILABLE.
+
 ## Layout
 
 - `SKILL.md` — philosophy, hard rules, permission model, modes, gates, workflows
