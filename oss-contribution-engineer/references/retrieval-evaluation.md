@@ -70,12 +70,15 @@ multiplier. Findings:
 ## End-to-end link
 
 Executed 2026-10-05 (protocol below): fixture patch task + real-repo acquisition task,
-each with and without V3 context acquisition. Result summary: patch-quality dimensions
-identical across arms (same gates apply after acquisition); delivered context on the
-real-repo task fell 40,745 → 460 est. tokens (~89×) with exact gold-span coverage;
-three defects were found by the comparison and fixed (head-only span scan,
-separator-order tokenization, RepoMap hub regression recorded). Full tables and the
-honest scope of what was re-executed vs reused: `oss-contribution-engineer-dev/v3/
-validation-results.md` § 7–8. Component metrics never claim patch causality (ARB's
-scope discipline), and cases where more context makes results worse are recorded
-there, not omitted.
+each with and without V3 context acquisition. Honest result summary: patch-quality
+dimensions identical across arms (same gates apply after acquisition); delivered
+context on the real-repo task fell 40,745 → 460 est. tokens **against a naive
+whole-file baseline — but a competent targeted read costs ~425 est. tokens, i.e. V3 is
+~1× on tokens versus skilled practice at this scale**; V3's measured value is
+structural (digest-bound spans, provenance, drift binding, plan-before-read), and the
+comparison exposed three tooling defects since fixed (head-only span scan,
+separator-order tokenization, RepoMap hub regression recorded). Full tables, the
+strawman-vs-competent baseline distinction, and the honest scope of what was
+re-executed vs reused: `oss-contribution-engineer-dev/v3/validation-results.md`
+§ 7–8. Component metrics never claim patch causality (ARB's scope discipline), and
+cases where more context makes results worse are recorded there, not omitted.

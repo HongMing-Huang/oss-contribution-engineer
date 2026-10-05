@@ -161,16 +161,28 @@ differences are process artifacts (goal contract, pack provenance, receipt) and 
 
 Gold: `src/click/formatting.py`, `def write_usage` at line 158 (grep-verified).
 
-| Metric | V2 path (naive grep → whole-file reads) | V3 path (route → pack) |
-|---|---|---|
-| Exploration steps | 2 (grep; read both hit files whole) | 4 (compile, route, plan, pack) |
-| Est. tokens delivered | **40,745** (formatting.py 2,611 + core.py 38,134 — core.py entirely unnecessary for the defect span) | **460** (one span) |
-| Gold file reached | yes | yes (router rank #2; test file #1) |
-| Gold span covered | yes, but only because the whole file was read | **yes — exactly `write_usage 158-203`** |
-| Noise delivered | 38k tokens of unrelated core.py | none (excluded candidates listed) |
-| Source identity binding | none | sha256 digest per span + receipt |
+> **Baseline honesty note (added after review)**: the "naive V2" arm below is a
+> deliberately weak strawman — "read every grep hit whole". A *competent* V2
+> contributor does grep → jump to the function (line 158) → read ~46 lines ≈
+> **425 est. tokens**, which is essentially the same as V3's 460. On a repository this
+> size, V3's token claim over skilled targeted reading is **~1×, not 89×**. The 89×
+> figure is only valid against the whole-file baseline and says something about that
+> baseline, not about V3's superiority.
 
-**Ratio: ~89× less delivered context with precise gold-span coverage.**
+| Metric | V2 path — naive (grep → whole-file reads) | V2 path — competent (grep → read function) | V3 path (route → pack) |
+|---|---|---|---|
+| Exploration steps | 2 | 2 | 4 (compile, route, plan, pack) |
+| Est. tokens delivered | 40,745 (formatting.py 2,611 + core.py 38,134) | **~425** (function span only) | **460** (one span) |
+| Gold file reached | yes | yes | yes (router rank #2; test file #1) |
+| Gold span covered | whole file | yes (manual jump to :158) | **yes — `write_usage 158-203`** |
+| Source identity binding | none | none | sha256 digest per span + receipt |
+| Scales to 500k-line repo? | degrades (whole-file habit) | yes, per-task | yes, per-task + plan-first |
+
+**Honest ratio: ~89× vs the naive baseline; ~1× (460 vs 425) vs competent targeted
+reading.** V3's real, measured deltas over a skilled V2 path on this task are
+process guarantees — digest-bound spans, provenance, receipt/reconstruct — and the
+head-only-scan and tokenizer defects the comparison exposed (a competent human would
+not have made them; the tooling had to be corrected to match human practice).
 
 ### Defects found by the E2E run (fixed; the reason this comparison is required)
 
@@ -183,8 +195,10 @@ Gold: `src/click/formatting.py`, `def write_usage` at line 158 (grep-verified).
 
 ### Conclusion
 
-Better context ≠ more context. The V3 path matched every V2 patch-quality dimension
-(identical gates) while cutting delivered context by ~89× on a real repository and
-making gold-span coverage, provenance, and drift binding structural. The one measured
-cost: the RepoMap prior needs task-aware hub penalties — an open routing-policy item,
-recorded with data.
+Better context ≠ more context. On this small real-repo task, V3 costs roughly the same
+tokens as a skilled human's targeted read (460 vs ~425) and matches every V2
+patch-quality dimension; its value is structural (provenance, drift binding,
+plan-before-read), not token savings at this scale. The naive-baseline 89× figure
+demonstrates why whole-file reading is an anti-pattern, nothing more. The one measured
+tooling cost: the RepoMap prior needs task-aware hub penalties — an open routing-policy
+item, recorded with data.
