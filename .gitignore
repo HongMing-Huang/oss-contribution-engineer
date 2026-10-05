@@ -1,0 +1,11 @@
+# security-hook session state (not part of the skill)
+.mimosa/
+# python
+__pycache__/
+*.pyc
+# per-repo evidence/cognition outputs (belong to the target repo, not this repo)
+.oss-contrib-evidence/
+.oss-contrib/
+.oss-retrieval-cache/
+# OS
+.DS_Store
