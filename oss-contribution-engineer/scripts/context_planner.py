@@ -250,6 +250,11 @@ def build_pack(repo: Path, goal: dict, plan: dict, anchor_symbols: list[str] | N
 
     pack = {
         "pack_version": 2,
+        "type": "CONTEXT_PACK",
+        "schema_version": 1,
+        "repository": str(repo),
+        "generated_by": "context_planner.py",
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "goal_digest": goal.get("digest"),
         "task_type": plan.get("task_type"),
         "no_regret": {

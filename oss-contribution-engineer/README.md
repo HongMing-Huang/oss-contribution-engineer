@@ -112,9 +112,12 @@ pack→audit→prune→repack→ACCEPT/BLOCKED loop.
 
 Every capability claim is classified in [`CAPABILITIES.json`](CAPABILITIES.json)
 as ENFORCED, IMPLEMENTED, ADVISORY, EXPERIMENTAL, or UNIMPLEMENTED — this README
-derives its claims from that ledger. Notably: the state machine, permissions,
-evidence witnessing, stale-blocking, and budget governing are ENFORCED;
-duplicate-work checking and the security stop are ADVISORY (they guide, they
+derives its claims from that ledger, and **every ENFORCED entry cites automated
+tests** (`tests/<file>.py#<test-id>`); a validation test fails the suite if an
+ENFORCED claim loses its test evidence. Notably: the state machine, permissions,
+evidence witnessing (typed), stale-blocking, RED↔GREEN regression identity,
+structured-artifact gates, and budget governing are ENFORCED; duplicate-work
+checking and the security stop are ADVISORY (they guide, they
 cannot mechanically prove); AOCI integration is FILE_COMPATIBILITY only
 (runtime/MCP integration is UNIMPLEMENTED); call/reference/inheritance graphs are
 UNIMPLEMENTED (imports + source↔test relations + PageRank is what exists);

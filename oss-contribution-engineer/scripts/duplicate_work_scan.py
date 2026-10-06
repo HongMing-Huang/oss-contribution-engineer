@@ -93,7 +93,13 @@ def parse_issue(issue_file: Path, timeline_files: list[Path]) -> dict:
                            "state": subj.get("state")})
 
     pr_refs = [r for r in cross_refs if r["is_pr"]]
-    return {
+    from datetime import datetime, timezone
+    import hashlib
+    body = {
+        "type": "DUPLICATE_WORK_EVIDENCE",
+        "schema_version": 1,
+        "generated_by": "duplicate_work_scan.py",
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "mode": "parse-issue",
         "issue": {
             "number": issue.get("number"), "title": issue.get("title"),
@@ -118,6 +124,9 @@ def parse_issue(issue_file: Path, timeline_files: list[Path]) -> dict:
         ],
         "conclusion": "DATA_COLLECTED — classification is the caller's judgment; data may be incomplete",
     }
+    body["digest"] = hashlib.sha256(json.dumps(
+        {k: v for k, v in body.items() if k != "digest"}, sort_keys=True).encode()).hexdigest()
+    return body
 
 
 def parse_search(results_file: Path) -> dict:

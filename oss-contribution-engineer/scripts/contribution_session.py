@@ -54,6 +54,9 @@ CLASSIFICATIONS = {"AVAILABLE", "CLAIMED", "PR_EXISTS", "DESIGN_BLOCKED",
                    "NEEDS_MAINTAINER_DECISION", "INVALID", "STALE", "TOO_LARGE",
                    "TOO_TRIVIAL", "GOOD_CANDIDATE"}
 
+REMOTE_ACTIONS = {"OPEN_ISSUE", "COMMENT_ISSUE", "PUSH_BRANCH", "OPEN_PR",
+                  "UPDATE_PR", "REPLY_REVIEW", "REQUEST_REREVIEW"}
+
 # triage classifications that END the run without a patch (V2: no-patch is success)
 STOPPING = {"CLAIMED", "PR_EXISTS", "DESIGN_BLOCKED", "NEEDS_MAINTAINER_DECISION",
             "INVALID", "STALE", "TOO_LARGE", "TOO_TRIVIAL"}
@@ -100,35 +103,125 @@ def manifest_entries(repo: Path) -> list[dict]:
         return []
 
 
+PROD_EXCLUDES_HINT = "production = non-test paths"
+
+
+def production_changes_since(repo: Path, base_sha: str) -> tuple[list[str], list[str]]:
+    """Return (production_paths, test_paths) changed between base_sha and HEAD.
+
+    Runtime bookkeeping (the evidence/session directory, the goal contract, and
+    recorded workflow artifacts) is not product code and is excluded."""
+    p = subprocess.run(["git", "-C", str(repo), "diff", "--name-only",
+                        base_sha + "..HEAD"],
+                       capture_output=True, text=True, shell=False)
+    if p.returncode != 0:
+        return [], []
+    s = load_session(repo) if session_path(repo).exists() else {}
+    bookkeeping = {".oss-contrib-evidence", ".github", ".git"}
+    goal_path = (s.get("goal") or {}).get("path")
+    artifact_paths = set()
+    for files in (s.get("artifacts") or {}).values():
+        artifact_paths.update(files)
+
+    def rel(p: str) -> str | None:
+        """Normalize a recorded (possibly absolute) path to repo-relative."""
+        pp = Path(p)
+        try:
+            return pp.resolve().relative_to(repo).as_posix()
+        except (ValueError, OSError):
+            return pp.as_posix() if not pp.is_absolute() else None
+
+    goal_rel = rel(goal_path) if goal_path else None
+    artifact_rels = {rel(a) for a in artifact_paths if rel(a)}
+    prod, tests = [], []
+    for f in p.stdout.splitlines():
+        f = f.strip()
+        if not f:
+            continue
+        first = f.split("/")[0]
+        if first in bookkeeping or f.startswith(".oss-contrib-evidence/"):
+            continue
+        if goal_rel and f == goal_rel:
+            continue
+        if f in artifact_rels:
+            continue
+        if is_test_path(f):
+            tests.append(f)
+        else:
+            prod.append(f)
+    return prod, tests
+
+
+def is_test_path(path: str) -> bool:
+    low = path.lower()
+    return ("/test" in low or "/tests/" in low or low.startswith("tests/")
+            or low.endswith(("_test.py", ".test.js", "_test.go", "_test.rs"))
+            or "/__tests__/" in low or "conftest" in low)
+
+
 def check_reproduction(repo: Path, s: dict) -> list[str]:
     missing = []
-    repro = [e for e in manifest_entries(repo) if e.get("kind") == "execution"
-             and any(w in e.get("purpose", "").lower()
-                     for w in ("reproduc", "actual behavior", "prove the bug"))]
+    repro = [e for e in manifest_entries(repo)
+             if e.get("evidence_type") == "REPRODUCTION" and e.get("status") == "PASS"]
     if not repro:
-        missing.append("reproduction evidence: no witnessed execution whose purpose "
-                       "records the reproducer (evidence_manifest record)")
+        missing.append("reproduction evidence: no REPRODUCTION-typed witnessed "
+                       "execution (evidence_manifest record --evidence-type REPRODUCTION)")
     return missing
 
 
 def check_red(repo: Path, s: dict) -> list[str]:
+    """RED requires a typed RED_REGRESSION witness that PASSED, bound to the
+    pre-patch production state (session base SHA)."""
     missing = []
-    red = [e for e in manifest_entries(repo) if e.get("expected_failure") is True
-           and e.get("status") == "PASS"]
-    if not red:
-        missing.append("RED witness: no --expect-fail execution recorded as PASS "
-                       "(regression test failing on unmodified upstream)")
+    base = s.get("base_sha")
+    reds = [e for e in manifest_entries(repo)
+            if e.get("evidence_type") == "RED_REGRESSION"
+            and e.get("status") == "PASS" and e.get("expected_failure") is True]
+    if not reds:
+        missing.append("RED witness: no RED_REGRESSION-typed execution recorded as "
+                       "PASS (--expect-fail --evidence-type RED_REGRESSION)")
+        return missing
+    if not base:
+        missing.append("RED binding: session has no base SHA")
+        return missing
+    bound = [e for e in reds if e.get("git_head") == base]
+    if not bound:
+        missing.append("RED binding: RED_REGRESSION witness was recorded at HEAD %s "
+                       "but the session base is %s — RED must run on the pre-patch "
+                       "production state"
+                       % ((reds[-1].get("git_head") or "?")[:12], base[:12]))
+        return missing
+    # the regression test itself must be identified and linked
+    if not any(e.get("regression_id") for e in bound):
+        missing.append("RED binding: RED_REGRESSION witness lacks --regression-id "
+                       "(needed to bind GREEN to the same test)")
     return missing
+
+
+def check_production_untouched(repo: Path, s: dict) -> list[str]:
+    """RED → PATCH: production code must be unmodified since base (test-only
+    changes are allowed)."""
+    base = s.get("base_sha")
+    if not base:
+        return ["pre-patch check: session has no base SHA"]
+    prod, tests = production_changes_since(repo, base)
+    if prod:
+        return ["pre-patch check: production file(s) already modified since base %s "
+                "before a verified RED→PATCH transition: %s — RED must be recorded "
+                "on the unmodified production state (test-only edits are allowed)"
+                % (base[:12], ", ".join(prod[:5]))]
+    return []
 
 
 def check_green_fresh(repo: Path, s: dict) -> list[str]:
     missing = []
     head = git_head(repo)
     green = [e for e in manifest_entries(repo)
-             if "green" in e.get("purpose", "").lower()
+             if e.get("evidence_type") == "GREEN_REGRESSION"
              and e.get("kind") == "execution" and e.get("status") == "PASS"]
     if not green:
-        missing.append("GREEN witness: no passing execution recorded for GREEN")
+        missing.append("GREEN witness: no GREEN_REGRESSION-typed passing execution "
+                       "(--evidence-type GREEN_REGRESSION)")
         return missing
     if not any(e.get("head_bound") for e in green):
         missing.append("GREEN witness must be recorded with --head-bound "
@@ -139,6 +232,44 @@ def check_green_fresh(repo: Path, s: dict) -> list[str]:
         missing.append("GREEN evidence is STALE: recorded at HEAD %s, current HEAD is "
                        "%s — re-run after the review-driven change"
                        % (stale[0].get("git_head", "?")[:12], (head or "?")[:12]))
+        return missing
+    # RED↔GREEN identity: GREEN must carry the same regression_id as the RED proof
+    reds = [e for e in manifest_entries(repo)
+            if e.get("evidence_type") == "RED_REGRESSION"
+            and e.get("status") == "PASS" and e.get("expected_failure") is True]
+    red_ids = {e.get("regression_id") for e in reds if e.get("regression_id")}
+    if red_ids and not any(e.get("regression_id") in red_ids for e in green):
+        missing.append("RED↔GREEN binding: GREEN_REGRESSION witness carries no "
+                       "regression_id matching the RED proof (%s) — the same "
+                       "regression test must pass after the fix"
+                       % ", ".join(sorted(red_ids)))
+        return missing
+    # test identity: the regression test that proved RED must be unchanged at GREEN.
+    # Comparing GREEN's own identity against the RED proof's identity catches a
+    # weakened/rewritten test (a changed file digest = invalidated RED proof).
+    red_by_id = {e.get("regression_id"): e for e in reds if e.get("regression_id")}
+    import hashlib as _h
+    for e in green:
+        rid = e.get("regression_id")
+        red = red_by_id.get(rid) if rid else None
+        if not red:
+            continue
+        red_ident = {i["path"]: i["digest"] for i in red.get("test_identity") or []}
+        if not red_ident:
+            continue
+        green_ident = {i["path"]: i["digest"] for i in e.get("test_identity") or []}
+        for path, digest in red_ident.items():
+            got = green_ident.get(path)
+            if got is None:
+                missing.append("RED↔GREEN binding: GREEN witness does not cover "
+                               "regression test %s from the RED proof" % path)
+                return missing
+            if got != digest:
+                missing.append("RED↔GREEN binding: regression test %s changed after "
+                               "RED (digest %s… → %s…) — the RED proof is "
+                               "invalidated; re-record RED and GREEN"
+                               % (path, digest[:12], got[:12]))
+                return missing
     return missing
 
 
@@ -164,15 +295,51 @@ def check_validation_current(repo: Path, s: dict) -> list[str]:
     return missing
 
 
+ARTIFACT_REQUIRED = {"type", "schema_version", "repository", "generated_by",
+                     "created_at", "digest"}
+
+
+def validate_artifact(path: Path, expected_type: str) -> list[str]:
+    """Structured artifact validation: type/schema_version/repository/generated_by/
+    created_at/digest must exist and digest must match the payload body. A bare {}
+    can never pass."""
+    if not path.exists():
+        return ["artifact %s does not exist" % path]
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        return ["artifact %s is not readable JSON: %s" % (path, e)]
+    if not isinstance(data, dict):
+        return ["artifact %s is not a JSON object" % path]
+    absent = [k for k in ARTIFACT_REQUIRED if k not in data]
+    if absent:
+        return ["artifact %s is not a structured artifact: missing field(s) %s — "
+                "produce it with the script's --json output (empty or ad-hoc files "
+                "are not evidence)" % (path.name, ", ".join(absent))]
+    if data["type"] != expected_type:
+        return ["artifact %s has type %s, expected %s" % (path.name, data["type"],
+                                                          expected_type)]
+    body = {k: v for k, v in data.items() if k != "digest"}
+    import hashlib as _h
+    if _h.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest() != data["digest"]:
+        return ["artifact %s digest mismatch — file was modified after generation"
+                % path.name]
+    return []
+
+
 def check_scope_audit(repo, s: dict) -> list[str]:
     sa = s.get("scope_audit") or {}
     if not sa.get("conclusion"):
-        return ["scope audit: not recorded (run diff_scope_check.py and 'record "
-                "--kind scope-audit --conclusion WITHIN_SCOPE|ACKNOWLEDGED')"]
+        return ["scope audit: not recorded (run diff_scope_check.py --json and "
+                "'record --kind scope-audit --file <json> --conclusion ...)']"]
     if sa.get("conclusion") not in ("WITHIN_SCOPE", "ACKNOWLEDGED"):
         return ["scope audit: conclusion %s is unresolved — fix drift or explicitly "
                 "ACKNOWLEDGE with a reason" % sa["conclusion"]]
-    return []
+    artifact = sa.get("artifact")
+    if not artifact:
+        return ["scope audit: no structured artifact recorded (the conclusion must "
+                "cite a SCOPE_AUDIT artifact)"]
+    return validate_artifact(Path(artifact), "SCOPE_AUDIT")
 
 
 def check_understanding(repo, s: dict) -> list[str]:
@@ -186,6 +353,29 @@ def check_understanding(repo, s: dict) -> list[str]:
         return ["contributor understanding: UNDERSTOOD requires --confirmed-by "
                 "(the agent never confirms for the human)"]
     return []
+
+
+def check_understanding_confirmed(repo, s: dict) -> list[str]:
+    """Upstream submission readiness: DEFERRED/INCOMPLETE may allow drafting and
+    local inspection, but publication requires explicit human confirmation."""
+    missing = check_understanding(repo, s)
+    if missing:
+        return missing
+    u = s["understanding"]
+    if u["status"] != "UNDERSTOOD":
+        return ["publication readiness: understanding status is %s — the doctrine "
+                "'never submit anything the human cannot personally explain and "
+                "defend' requires UNDERSTOOD (confirmed by the human) before "
+                "IN_REVIEW; DEFERRED/INCOMPLETE may only allow PR draft inspection"
+                % u["status"]]
+    return []
+
+
+def has_consumed_remote_action(s: dict, action: str) -> bool:
+    for g in (s.get("authority") or {}).get("actions", []):
+        if g.get("action") == action and g.get("consumed_at"):
+            return True
+    return False
 
 
 # gate table: STATE -> (prerequisite evidence checks, authority requirements)
@@ -203,15 +393,15 @@ def gate_requirements(state: str) -> dict:
         },
         "CANDIDATE": {
             "checks": [
-                ("recon artifacts", lambda repo, s: [] if (s.get("artifacts") or {}).get("recon")
-                 else ["recon artifacts not recorded (record --kind recon --file ...)"]),
+                ("recon artifact", lambda repo, s: artifact_gate(repo, s, "recon",
+                                                                 "REPOSITORY_RECON")),
             ],
             "authority": [],
         },
         "DEDUPLICATE": {
             "checks": [
-                ("dedupe artifacts", lambda repo, s: [] if (s.get("artifacts") or {}).get("dedupe")
-                 else ["duplicate-work evidence not recorded"]),
+                ("dedupe artifact", lambda repo, s: artifact_gate(repo, s, "dedupe",
+                                                                  "DUPLICATE_WORK_EVIDENCE")),
             ],
             "authority": [],
         },
@@ -227,7 +417,8 @@ def gate_requirements(state: str) -> dict:
             "authority": [],
         },
         "PATCH": {
-            "checks": [("red witness", red_gate)],
+            "checks": [("red witness", red_gate),
+                       ("pre-patch production untouched", pre_patch_gate)],
             "authority": [("worktree_edit",
                            "editing production code requires WORKTREE_EDIT granted "
                            "via set-authority with an evidence ref")],
@@ -240,7 +431,7 @@ def gate_requirements(state: str) -> dict:
             "authority": [],
         },
         "REGRESSION": {
-            "checks": [("green witness fresh", green_gate)],
+            "checks": [("green witness fresh + RED-bound", green_gate)],
             "authority": [],
         },
         "CONTRIBUTOR_UNDERSTANDING": {
@@ -264,10 +455,11 @@ def gate_requirements(state: str) -> dict:
                 ("scope audit at PR time", check_scope_audit),
                 ("upstream identity", lambda repo, s: [] if (s.get("upstream") or {}).get("pr_identity")
                  else ["upstream PR identity not captured (upstream --pr-json FILE)"]),
+                ("publication understanding", check_understanding_confirmed),
             ],
-            "authority": [("remote_write",
-                           "publishing requires REMOTE_WRITE granted via set-authority "
-                           "with an evidence ref (explicit per-action authorization)")],
+            "authority": [("remote_action OPEN_PR",
+                           "publishing requires an action-scoped OPEN_PR grant "
+                           "(set-authority --grant remote --action OPEN_PR --target ...)")],
         },
     }.get(state, {"checks": [], "authority": []})
 
@@ -278,6 +470,18 @@ def reproduction_gate(repo, s):
 
 def red_gate(repo, s):
     return check_red(repo, s)
+
+
+def pre_patch_gate(repo, s):
+    return check_production_untouched(repo, s)
+
+
+def artifact_gate(repo, s, key, expected_type):
+    files = (s.get("artifacts") or {}).get(key) or []
+    if not files:
+        return ["%s artifact not recorded (record --kind %s --file <script --json "
+                "output>)" % (key, key)]
+    return validate_artifact(Path(files[-1]), expected_type)
 
 
 def green_gate(repo, s):
@@ -321,14 +525,14 @@ def cmd_init(repo: Path, args) -> int:
         "base_sha": git_head(repo),
         "state": "DISCOVER",
         "goal": {"digest": digest, "path": str(goal_path)},
-        "authority": {"read": True, "worktree_edit": False, "remote_write": False,
-                      "grants": []},
+        "authority": {"read": True, "worktree_edit": False,
+                      "grants": [], "actions": []},
         "context": {"plan": None, "pack": None, "receipt": None},
         "artifacts": {},
         "classification": None,
         "understanding": {"status": None, "confirmed_by": None},
         "scope_audit": {},
-        "upstream": {},
+        "upstream": {"observed": False},
         "blockers": [],
         "history": [{"at": now(), "event": "init", "state": "DISCOVER"}],
     }
@@ -343,15 +547,20 @@ def cmd_status(repo: Path, args=None) -> int:
     nxt = STATES[STATES.index(s["state"]) + 1] if s["state"] != "IN_REVIEW" else None
     print("state: %s  (task %s, base %s)" % (s["state"], s["task_id"],
                                              (s.get("base_sha") or "?")[:12]))
-    print("authority: worktree_edit=%s remote_write=%s" % (
-        s["authority"]["worktree_edit"], s["authority"]["remote_write"]))
+    print("authority: worktree_edit=%s remote_actions=%s" % (
+        s["authority"]["worktree_edit"],
+        [g["action"] for g in s["authority"].get("actions", []) if not g.get("consumed_at")]))
     if nxt:
         req = gate_requirements(nxt)
         missing = []
         for _, fn in req["checks"]:
             missing.extend(fn(repo, s))
         for auth, why in req["authority"]:
-            if not s["authority"].get(auth):
+            if auth.startswith("remote_action "):
+                action = auth.split(" ", 1)[1]
+                if not has_pending_remote_action(s, action):
+                    missing.append("authority %s not granted: %s" % (auth, why))
+            elif not s["authority"].get(auth):
                 missing.append("authority %s not granted: %s" % (auth, why))
         print("next legal: %s" % nxt)
         if missing:
@@ -394,7 +603,11 @@ def cmd_advance(repo: Path, args) -> int:
     for _, fn in req["checks"]:
         missing.extend(fn(repo, s))
     for auth, why in req["authority"]:
-        if not s["authority"].get(auth):
+        if auth.startswith("remote_action "):
+            action = auth.split(" ", 1)[1]
+            if not has_pending_remote_action(s, action):
+                missing.append("authority %s not granted: %s" % (auth, why))
+        elif not s["authority"].get(auth):
             missing.append("authority %s not granted: %s" % (auth, why))
     if missing:
         print("GATE REFUSED: cannot advance to %s" % target, file=sys.stderr)
@@ -404,6 +617,11 @@ def cmd_advance(repo: Path, args) -> int:
         save_session(repo, s)
         return 1
     s["blockers"] = []
+    # consume one-shot remote action grants used by this transition
+    if target == "IN_REVIEW":
+        for g in s["authority"].get("actions", []):
+            if g.get("action") == "OPEN_PR" and not g.get("consumed_at"):
+                g["consumed_at"] = now()
     s["history"].append({"at": now(), "event": "advance", "from": s["state"],
                          "to": target})
     s["state"] = target
@@ -412,26 +630,55 @@ def cmd_advance(repo: Path, args) -> int:
     return 0
 
 
+def has_pending_remote_action(s: dict, action: str) -> bool:
+    for g in (s.get("authority") or {}).get("actions", []):
+        if g.get("action") == action and not g.get("consumed_at"):
+            return True
+    return False
+
+
 def cmd_set_authority(repo: Path, args) -> int:
     s = load_session(repo)
     if not args.evidence_ref:
         print("error: granting authority requires --evidence-ref (an artifact id or "
               "path recording the user's explicit authorization)", file=sys.stderr)
         return 2
-    if args.grant not in ("worktree_edit", "remote_write"):
-        print("error: --grant must be worktree_edit or remote_write", file=sys.stderr)
-        return 2
     if not args.by_user:
         print("error: --by-user is required (authorization must be attributed to an "
               "explicit user statement, never inferred)", file=sys.stderr)
         return 2
-    s["authority"][args.grant] = True
-    s["authority"]["grants"].append({"grant": args.grant, "evidence_ref": args.evidence_ref,
-                                     "by_user": args.by_user, "at": now()})
+    if args.grant == "worktree_edit":
+        s["authority"]["worktree_edit"] = True
+        s["authority"]["grants"].append({"grant": "worktree_edit",
+                                         "evidence_ref": args.evidence_ref,
+                                         "by_user": args.by_user, "at": now()})
+    elif args.grant == "remote":
+        # action-scoped, one-shot remote authorization (V5.1): a session-wide
+        # remote_write flag can never be granted again
+        if args.action not in REMOTE_ACTIONS:
+            print("error: --action must be one of %s" % sorted(REMOTE_ACTIONS),
+                  file=sys.stderr)
+            return 2
+        if not args.target:
+            print("error: --target is required for a remote action grant "
+                  "(e.g. OWNER/REPO#123 or OWNER/REPO)", file=sys.stderr)
+            return 2
+        s["authority"]["actions"].append({
+            "action": args.action, "target": args.target,
+            "authorized_by": args.by_user, "evidence_ref": args.evidence_ref,
+            "created_at": now(), "consumed_at": None,
+        })
+    else:
+        print("error: --grant must be worktree_edit or remote", file=sys.stderr)
+        return 2
     s["history"].append({"at": now(), "event": "grant", "grant": args.grant,
+                         "action": getattr(args, "action", None),
+                         "target": getattr(args, "target", None),
                          "evidence_ref": args.evidence_ref})
     save_session(repo, s)
-    print("authority granted: %s (evidence %s)" % (args.grant, args.evidence_ref))
+    print("authority granted: %s%s (evidence %s)" % (
+        args.grant, (" " + args.action + " -> " + args.target) if args.grant == "remote" else "",
+        args.evidence_ref))
     return 0
 
 
@@ -448,7 +695,9 @@ def cmd_record(repo: Path, args) -> int:
             print("error: --conclusion must be WITHIN_SCOPE|ACKNOWLEDGED|SCOPE_FINDINGS",
                   file=sys.stderr)
             return 2
+        files = [f for f in (args.file or []) if Path(f).exists()]
         s["scope_audit"] = {"conclusion": args.conclusion,
+                            "artifact": files[0] if files else None,
                             "reason": args.reason or "",
                             "at": now()}
     else:
@@ -522,15 +771,15 @@ def cmd_upstream(repo: Path, args) -> int:
         print("error: could not classify upstream state: %s" % e, file=sys.stderr)
         return 3
     identity = {"repo": s.get("repository"), "number": (pr or {}).get("number")}
-    s["upstream"] = {"pr_identity": identity, "outcome": outcome,
+    # V5.1: capturing an existing PR is UPSTREAM_OBSERVED — it proves publication
+    # happened previously and grants NOTHING. The next comment/push/PR update needs
+    # its own action-scoped grant (set-authority --grant remote --action ...).
+    s["upstream"] = {"observed": True, "pr_identity": identity, "outcome": outcome,
                      "source_file": str(p), "at": now()}
-    s["authority"]["remote_write"] = True  # a captured PR implies publication happened;
-    s["authority"]["grants"].append({"grant": "remote_write",
-                                     "evidence_ref": str(p), "by_user": "upstream-capture",
-                                     "at": now()})
-    s["history"].append({"at": now(), "event": "upstream", "outcome": outcome})
+    s["history"].append({"at": now(), "event": "upstream-observed", "outcome": outcome})
     save_session(repo, s)
-    print("upstream outcome: %s (pr #%s)" % (outcome, identity["number"]))
+    print("upstream OBSERVED: %s (pr #%s) — this grants no remote authorization"
+          % (outcome, identity["number"]))
     if outcome != "MERGED":
         print("NOTE: %s is NOT a merged contribution — never reported as success"
               % outcome)
@@ -570,7 +819,9 @@ def main() -> int:
     p.set_defaults(func=cmd_advance)
 
     p = sub.add_parser("set-authority")
-    p.add_argument("--grant", required=True)
+    p.add_argument("--grant", required=True, help="worktree_edit | remote (action-scoped)")
+    p.add_argument("--action", help="for --grant remote: %s" % "OPEN_ISSUE|COMMENT_ISSUE|PUSH_BRANCH|OPEN_PR|UPDATE_PR|REPLY_REVIEW|REQUEST_REREVIEW")
+    p.add_argument("--target", help="for --grant remote: OWNER/REPO or OWNER/REPO#123")
     p.add_argument("--evidence-ref", required=True)
     p.add_argument("--by-user", required=True)
     p.set_defaults(func=cmd_set_authority)

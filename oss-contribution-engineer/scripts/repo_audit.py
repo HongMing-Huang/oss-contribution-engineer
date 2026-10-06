@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
+import subprocess
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 SKIP_DIRS = {
@@ -178,6 +181,12 @@ def matches(rel: str, pattern: str) -> bool:
     return fnmatch.fnmatch(rel.lower(), pattern.lower())
 
 
+def _git_head(repo: Path) -> str | None:
+    p = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                       capture_output=True, text=True, shell=False)
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
 def audit(repo: Path, max_depth: int) -> dict:
     files = list(walk_files(repo, max_depth))
     findings: dict[str, dict[str, set[str]]] = {}
@@ -204,8 +213,13 @@ def audit(repo: Path, max_depth: int) -> dict:
         rel = f.relative_to(repo).as_posix()
         if rel in MANIFEST_FILES or rel.lower() in [m.lower() for m in MANIFEST_FILES]:
             present_manifests.append(rel)
-    return {
+    body = {
+        "type": "REPOSITORY_RECON",
+        "schema_version": 1,
         "repository": str(repo),
+        "base_sha": _git_head(repo),
+        "generated_by": "repo_audit.py",
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "max_depth": max_depth,
         "languages": [{"language": k, "files": v} for k, v in langs.most_common(10)],
         "top_level_entries": top[:60],
@@ -217,6 +231,9 @@ def audit(repo: Path, max_depth: int) -> dict:
             "detection depth capped; nested monorepo docs may live deeper — run with a subdir if needed",
         ],
     }
+    body["digest"] = hashlib.sha256(json.dumps(
+        {k: v for k, v in body.items() if k != "digest"}, sort_keys=True).encode()).hexdigest()
+    return body
 
 
 def summarize(report: dict) -> str:

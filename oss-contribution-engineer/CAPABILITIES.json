@@ -1,27 +1,44 @@
 {
-  "ledger_version": 1,
-  "updated": "2026-10-05",
-  "rule": "README and SKILL.md derive their claims from this file. ADVISORY must never be described as ENFORCED.",
+  "ledger_version": 2,
+  "updated": "2026-10-06",
+  "rule": "README and SKILL.md derive their claims from this file. ADVISORY must never be described as ENFORCED. Every ENFORCED entry cites automated tests (tests/<file>.py#<test-id>); a claim without executable evidence is downgraded.",
   "capabilities": {
     "state_machine": {
       "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_production_edit_before_red_blocks_patch",
+        "tests/test_black_box_lifecycle.py#test_production_edit_before_red_rejected"
+      ],
       "evidence": "scripts/contribution_session.py: linear gates, objective machine evidence only, illegal transitions exit 1"
     },
     "permissions": {
       "status": "ENFORCED",
-      "evidence": "session authority gates: PATCH requires granted worktree_edit, IN_REVIEW requires granted remote_write; grants require --by-user + --evidence-ref"
+      "tests": [
+        "tests/test_session_runtime.py#test_action_scoped_grants",
+        "tests/test_black_box_lifecycle.py#test_happy_path_to_pr_ready_with_typed_evidence"
+      ],
+      "evidence": "session authority gates: PATCH requires granted worktree_edit; grants require --by-user + --evidence-ref"
     },
     "remote_write_control": {
       "status": "ENFORCED",
-      "evidence": "session refuses IN_REVIEW without a captured upstream PR identity; no script posts anything"
+      "tests": [
+        "tests/test_session_runtime.py#test_action_scoped_grants",
+        "tests/test_session_runtime.py#test_upstream_capture_grants_nothing",
+        "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization"
+      ],
+      "evidence": "no session-wide remote_write flag exists; remote actions are one-shot scoped grants (action/target/authorized_by/evidence_ref/created_at/consumed_at); upstream observation grants nothing"
     },
     "source_read_provenance": {
       "status": "IMPLEMENTED",
-      "evidence": "cognition_receipt record-read binds sha256 per read; verify flags CURRENT/CHANGED/DELETED; GREEN staleness blocks advancement"
+      "evidence": "cognition_receipt record-read binds sha256 per read; verify flags CURRENT/CHANGED/DELETED"
     },
     "context_budget": {
       "status": "ENFORCED",
-      "evidence": "budget_governor.govern_pack: bounded pack->audit->prune->repack->ACCEPT/BLOCKED loop; direct-span pruning reports displaced_direct"
+      "tests": [
+        "tests/test_black_box_lifecycle.py#test_budget_govern_cli",
+        "tests/test_black_box_lifecycle.py#test_govern_blocked_on_non_source_overflow"
+      ],
+      "evidence": "budget_governor govern (public CLI): bounded pack->audit->prune->repack->ACCEPT/BLOCKED; accounting recomputed from actual spans; pack_digest regenerated after pruning"
     },
     "retrieval_routing": {
       "status": "IMPLEMENTED",
@@ -33,27 +50,63 @@
     },
     "span_refinement": {
       "status": "IMPLEMENTED",
-      "evidence": "whole-file symbol scan + anchor symbols/lines; regression tests cover late symbols, same-name, large files"
+      "tests": [
+        "tests/test_pack_regressions.py#test_late_symbol_is_delivered",
+        "tests/test_pack_regressions.py#test_multiple_same_name_symbols"
+      ],
+      "evidence": "whole-file symbol scan + anchor symbols/lines"
     },
     "evidence_witnessing": {
       "status": "ENFORCED",
-      "evidence": "results exist only via evidence_manifest record (exit-code witnessed, sha256 artifacts) or explicit record-skip with reason"
+      "tests": [
+        "tests/test_session_runtime.py#test_red_requires_typed_expected_fail_witness",
+        "tests/test_session_runtime.py#test_reproduction_requires_typed_evidence"
+      ],
+      "evidence": "results exist only via evidence_manifest record (exit-code witnessed, sha256 artifacts) or explicit record-skip with reason; gates read typed evidence, not purpose strings"
     },
     "stale_validation_blocking": {
       "status": "ENFORCED",
-      "evidence": "validation_report STALE (head-bound recorded at other HEAD) blocks CONTRIBUTOR_UNDERSTANDING and PR_READY gates"
+      "tests": [
+        "tests/test_session_runtime.py#test_stale_head_bound_green_blocks_validation",
+        "tests/test_session_runtime.py#test_changed_regression_test_invalidates_green"
+      ],
+      "evidence": "head-bound records at another HEAD block CONTRIBUTOR_UNDERSTANDING and PR_READY; RED is bound to the pre-patch base SHA and production edits before PATCH are refused"
+    },
+    "red_green_regression_identity": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_green_requires_matching_regression_id",
+        "tests/test_session_runtime.py#test_changed_regression_test_invalidates_green"
+      ],
+      "evidence": "GREEN_REGRESSION must carry the RED proof's regression_id and matching test-file digests; a changed test invalidates the RED proof"
+    },
+    "structured_artifact_gates": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_empty_recon_artifact_rejected",
+        "tests/test_session_runtime.py#test_tampered_artifact_rejected",
+        "tests/test_session_runtime.py#test_wrong_type_artifact_rejected"
+      ],
+      "evidence": "recon/dedupe/scope-audit artifacts must be typed, digest-bound JSON with full envelope; {} or tampered files are rejected"
     },
     "duplicate_work_check": {
       "status": "ADVISORY",
-      "evidence": "duplicate_work_scan collects evidence and the session records classification, but nothing mechanically proves the agent ran the scan before PROVE"
+      "evidence": "duplicate_work_scan collects evidence but nothing mechanically proves the agent ran the scan before PROVE"
     },
     "contributor_understanding": {
-      "status": "ADVISORY",
-      "evidence": "session records the status and refuses UNDERSTOOD without --confirmed-by, but cannot verify the human actually understands"
+      "status": "IMPLEMENTED",
+      "tests": [
+        "tests/test_session_runtime.py#test_in_review_requires_understood"
+      ],
+      "evidence": "UNDERSTOOD requires --confirmed-by (human); DEFERRED/INCOMPLETE cannot reach IN_REVIEW. Whether the human truly understands remains human judgment"
     },
     "upstream_lifecycle": {
       "status": "IMPLEMENTED",
-      "evidence": "upstream_state classify() from captured JSON: MERGED is the only success; capture itself is manual (ADVISORY)"
+      "tests": [
+        "tests/test_session_runtime.py#test_upstream_capture_grants_nothing",
+        "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization"
+      ],
+      "evidence": "upstream_state classify(): MERGED is the only success; capture is marked UPSTREAM_OBSERVED and grants nothing"
     },
     "security_stop": {
       "status": "ADVISORY",

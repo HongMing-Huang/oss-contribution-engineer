@@ -73,8 +73,22 @@ def slugify(text: str, limit: int = 40) -> str:
     return slug or "run"
 
 
+EVIDENCE_TYPES = {"REPRODUCTION", "RED_REGRESSION", "GREEN_REGRESSION",
+                  "PACKAGE_TEST", "LINT", "BUILD", "INTEGRATION", "BASELINE",
+                  "RECON", "GENERAL"}
+
+
+def _file_digest(path: str) -> str | None:
+    p = Path(path)
+    if not p.exists():
+        return None
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
 def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
-               head_bound: bool = False) -> int:
+               head_bound: bool = False, evidence_type: str = "GENERAL",
+               regression_id: str | None = None,
+               test_files: list[str] | None = None) -> int:
     if not command:
         print("error: no command given after '--'", file=sys.stderr)
         return 2
@@ -117,6 +131,12 @@ def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
         "kind": "execution",
         "timestamp": ts.isoformat(),
         "purpose": purpose,
+        "evidence_type": evidence_type,
+        "regression_id": regression_id,
+        # regression-test identity: digests let the runtime detect a test that was
+        # changed after RED (weakening the test to obtain GREEN)
+        "test_identity": [{"path": str(Path(f).resolve()), "digest": _file_digest(f)}
+                          for f in (test_files or []) if Path(f).exists()],
         "command": command,
         "exit_code": p.returncode,
         "status": status,
@@ -222,6 +242,14 @@ def main() -> int:
     p_rec.add_argument("--head-bound", action="store_true",
                        help="evidence is only valid for the recorded HEAD (GREEN, suites, "
                             "lint, build); validation_report marks it STALE after HEAD moves")
+    p_rec.add_argument("--evidence-type", default="GENERAL", choices=sorted(EVIDENCE_TYPES),
+                       help="typed evidence category — the machine discriminator for "
+                            "runtime gates (purpose is for humans)")
+    p_rec.add_argument("--regression-id", help="links RED_REGRESSION and GREEN_REGRESSION "
+                                               "records of the same regression test")
+    p_rec.add_argument("--test-file", action="append",
+                       help="regression test file(s) whose digests are recorded as "
+                            "identity — changing them after RED invalidates the proof")
     p_rec.add_argument("command", nargs=argparse.REMAINDER, help="command after '--'")
 
     p_skip = sub.add_parser("record-skip", help="record a non-execution explicitly")
@@ -243,7 +271,8 @@ def main() -> int:
 
     if args.cmd == "record":
         command = [c for c in args.command if c != "--"]
-        return cmd_record(repo, args.purpose, command, args.expect_fail, args.head_bound)
+        return cmd_record(repo, args.purpose, command, args.expect_fail, args.head_bound,
+                          args.evidence_type, args.regression_id, args.test_file)
     if args.cmd == "record-skip":
         return cmd_record_skip(repo, args.purpose, args.status, args.reason)
     if args.cmd == "show":

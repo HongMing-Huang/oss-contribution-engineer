@@ -12,6 +12,7 @@ Exit codes: 0 within soft budgets, 1 soft budget crossed (actions required),
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -41,25 +42,57 @@ ACTIONS = [
 ]
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Token budget governor (pure check).")
-    ap.add_argument("pack", help="Context Pack JSON")
-    ap.add_argument("--config", help="optional budget config JSON")
-    args = ap.parse_args()
-    try:
-        pack = json.loads(Path(args.pack).read_text())
-    except (OSError, json.JSONDecodeError) as e:
-        print("error: cannot read pack: %s" % e, file=sys.stderr)
-        return 2
-    budgets = dict(DEFAULT_BUDGETS)
-    if args.config:
+def main_pack_audit(pack: dict | None = None, config_path: str | None = None) -> int:
+    """Audit-only mode (kept public and separate from govern)."""
+    if pack is None:
+        ap = argparse.ArgumentParser(description="Token budget audit.")
+        ap.add_argument("pack")
+        ap.add_argument("--config")
+        args, _extra = ap.parse_known_args()
         try:
-            user = json.loads(Path(args.config).read_text())
+            pack = json.loads(Path(args.pack).read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            print("error: cannot read pack: %s" % e, file=sys.stderr)
+            return 2
+        config_path = args.config
+    budgets = dict(DEFAULT_BUDGETS)
+    if config_path:
+        try:
+            user = json.loads(Path(config_path).read_text())
             for k, v in user.items():
                 budgets.setdefault(k, {}).update(v if isinstance(v, dict) else {"soft": v, "hard": v})
         except (OSError, json.JSONDecodeError) as e:
             print("error: cannot read config: %s" % e, file=sys.stderr)
             return 2
+    ta = pack.get("token_accounting", {})
+    over_soft, over_hard = [], []
+    print("Token budget status (estimates, chars/4):")
+    for cat, lim in budgets.items():
+        used = ta.get("%s_used_est" % cat)
+        if used is None:
+            continue
+        status = "ok"
+        if used > lim["hard"]:
+            status = "HARD EXCEEDED"
+            over_hard.append(cat)
+        elif used > lim["soft"]:
+            status = "over soft"
+            over_soft.append(cat)
+        print("  %-10s %6d / soft %5d / hard %5d  %s" % (cat, used, lim["soft"], lim["hard"], status))
+    if not (over_soft or over_hard):
+        print("Within budgets.")
+        return 0
+    if over_soft:
+        print("Soft budget crossed for: %s" % ", ".join(over_soft))
+        for a in ACTIONS:
+            print("  " + a)
+    if over_hard:
+        print("HARD budget crossed for: %s — a user-visible reason is required." % ", ".join(over_hard))
+        return 3
+    return 1
+
+
+# --------------------------------------------------------------------- governing
 
     ta = pack.get("token_accounting", {})
     over_soft, over_hard = [], []
@@ -116,18 +149,54 @@ def _span_priority(index: int, span: dict) -> tuple:
     return (0 if has_direct else 1, index)
 
 
+def _span_tokens(span: dict) -> int:
+    """Actual selected span cost: (end - start + 1) lines * 40 chars / 4.
+    The absolute end line was a V5 bug (over-charged late spans, under-charged
+    early ones)."""
+    a, _, b = span.get("lines", "0-0").partition("-")
+    try:
+        start = int(a or 0)
+        end = int(b or a or 0)
+    except ValueError:
+        return 1
+    return max(1, (end - start + 1) * 40 // 4)
+
+
+def _recompute_accounting(pack: dict) -> dict:
+    """Recompute category accounting from delivered content."""
+    ta = pack.setdefault("token_accounting", {})
+    src = sum(_span_tokens(s) for s in pack.get("source_ranges", []))
+    test = sum(_span_tokens(t) for t in pack.get("tests", []))
+    ta["source_used_est"] = src
+    ta["test_used_est"] = test
+    return ta
+
+
+def recompute_pack_digest(pack: dict) -> str:
+    """Regenerate pack_digest after any mutation. A modified Context Pack must
+    never retain the digest of its previous contents."""
+    body = {k: v for k, v in pack.items() if k != "pack_digest"}
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    pack["pack_digest"] = digest
+    return digest
+
+
 def govern_pack(pack: dict, max_iterations: int = 12) -> dict:
-    """Bounded repack loop. Returns {decision, iterations, actions, audit}.
+    """Bounded repack loop: pack → audit → prune → repack → ACCEPT/BLOCKED.
     ACCEPT only when every category is within its soft budget; BLOCKED when
-    pruning cannot get there (human decision required)."""
+    pruning cannot get there (human decision required). Token accounting is
+    recomputed from delivered spans each iteration and pack_digest is
+    regenerated on every mutation."""
     actions: list[str] = []
     iterations = 0
+    pruned_any = False
     for _ in range(max_iterations):
         iterations += 1
-        ta = pack.get("token_accounting", {})
+        ta = _recompute_accounting(pack)
         over = [c for c in GOV_SOFT
                 if ta.get("%s_used_est" % c, 0) > GOV_SOFT[c]]
         if not over:
+            recompute_pack_digest(pack) if pruned_any else None
             return {"decision": "ACCEPT", "iterations": iterations,
                     "actions": actions,
                     "audit": "all categories within soft budgets"}
@@ -140,9 +209,7 @@ def govern_pack(pack: dict, max_iterations: int = 12) -> dict:
             dropped = spans.pop(idx)
             ev = dropped.get("evidence") or []
             has_direct = any(e.get("family") in DIRECT_FAMILIES for e in ev)
-            b = int((dropped.get("lines", "0-0").partition("-"))[2] or 0)
-            span_tokens = max(1, b * 40 // 4)
-            ta["source_used_est"] = max(0, ta.get("source_used_est", 0) - span_tokens)
+            pruned_any = True
             pack.setdefault("excluded", []).append(
                 {"path": dropped.get("path"), "symbol": dropped.get("symbol"),
                  "reason": "pruned by budget governor (span %s, %s evidence)"
@@ -157,8 +224,12 @@ def govern_pack(pack: dict, max_iterations: int = 12) -> dict:
             else:
                 actions.append("pruned structural-only span %s:%s"
                                % (dropped.get("path"), dropped.get("lines")))
+            recompute_pack_digest(pack)
         else:
             break
+    _recompute_accounting(pack)
+    if pruned_any:
+        recompute_pack_digest(pack)
     ta = pack.get("token_accounting", {})
     still_over = [c for c in GOV_SOFT if ta.get("%s_used_est" % c, 0) > GOV_SOFT[c]]
     if still_over:
@@ -170,4 +241,29 @@ def govern_pack(pack: dict, max_iterations: int = 12) -> dict:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # V5.1: public CLI surface includes the real govern operation, so the audit
+    # CLI and govern_pack() are one system, not two unrelated paths.
+    import argparse as _ap
+    _p = _ap.ArgumentParser(description="Budget auditor + governed repack loop.")
+    _p.add_argument("mode", choices=["audit", "govern"], help="audit = report only; govern = bounded repack loop")
+    _p.add_argument("pack", help="Context Pack JSON")
+    _p.add_argument("--config", help="optional budget config JSON")
+    _p.add_argument("--out", help="write the governed pack here (govern mode)")
+    _args = _p.parse_args()
+    try:
+        _pack = json.loads(Path(_args.pack).read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        print("error: cannot read pack: %s" % e, file=sys.stderr)
+        raise SystemExit(2)
+    if _args.mode == "audit":
+        _rc = main_pack_audit(_pack, _args.config)
+    else:
+        _result = govern_pack(_pack)
+        _recompute_accounting(_pack)
+        recompute_pack_digest(_pack)
+        if _args.out:
+            Path(_args.out).write_text(json.dumps(_pack, indent=2, sort_keys=True) + "\n")
+        print(json.dumps(_result, indent=2))
+        print("pack_digest: %s" % _pack.get("pack_digest", "?")[:16])
+        _rc = 0 if _result["decision"] == "ACCEPT" else (3 if _result["decision"] == "BLOCKED" else 1)
+    raise SystemExit(_rc)

@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 LOCKFILES = {
@@ -54,6 +56,12 @@ def make_git_runner(repo: Path):
         return p.returncode, p.stdout, p.stderr
 
     return run_git
+
+
+def _git_head(repo: Path, *args: str) -> str | None:
+    rc, out, _ = make_git_runner(repo)(["rev-parse", *args]) if args else \
+        make_git_runner(repo)(["rev-parse", "HEAD"])
+    return out.strip() if rc == 0 else None
 
 
 def categorize(path: str) -> str:
@@ -168,7 +176,13 @@ def main() -> int:
                                "change is required by the fix" % ", ".join(lock_or_manifest))
 
     report = {
+        "type": "SCOPE_AUDIT",
+        "schema_version": 1,
         "repository": str(repo),
+        "base_sha": _git_head(repo, "rev-parse", base) or None,
+        "head_sha": _git_head(repo, "rev-parse", "HEAD"),
+        "generated_by": "diff_scope_check.py",
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "base": base,
         "changed_files": files,
         "category_counts": counts,
@@ -185,6 +199,8 @@ def main() -> int:
                   "budget is the small-fix default from references/patch-design.md; justified "
                   "larger scope needs an explicit plan"],
     }
+    report["digest"] = hashlib.sha256(json.dumps(
+        {k: v for k, v in report.items() if k != "digest"}, sort_keys=True).encode()).hexdigest()
 
     if args.json:
         print(json.dumps(report, indent=2))

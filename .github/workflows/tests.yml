@@ -1,0 +1,22 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile all scripts
+        run: |
+          cd oss-contribution-engineer/scripts
+          for f in *.py; do python3 -m py_compile "$f"; done
+      - name: Run test suite (incl. capability-claim validation)
+        run: |
+          cd oss-contribution-engineer
+          python3 -m pytest tests/ -q
