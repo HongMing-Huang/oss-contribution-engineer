@@ -1,0 +1,17 @@
+[
+ {
+  "event": "issue_comment",
+  "created_at": "2026-09-29T09:30:00Z",
+  "actor": {
+   "login": "contributor-dev"
+  },
+  "body": "This approach is wrong; withdrawing."
+ },
+ {
+  "event": "closed",
+  "created_at": "2026-10-02T18:00:00Z",
+  "actor": {
+   "login": "contributor-dev"
+  }
+ }
+]

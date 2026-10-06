@@ -1,0 +1,8 @@
+{
+ "total_count": 3,
+ "check_runs": [
+  {"name": "unit-tests", "status": "completed", "conclusion": "success"},
+  {"name": "lint", "status": "completed", "conclusion": "success"},
+  {"name": "e2e-matrix", "status": "completed", "conclusion": "failure"}
+ ]
+}

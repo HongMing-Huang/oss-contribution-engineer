@@ -1,8 +1,14 @@
 # Eval 13 — Reviewer challenges the design (Goal 2 case C)
 
-**Status in this delivery: RUBRIC-ANALYZED (trace basis: references/review-response.md
-loop steps 1–5 and taxonomy; SKILL.md Mode 9; maintainer-etiquette.md § Responding to
-review; review-response progress block).**
+**Status: EXECUTED (both branches) as of goal 4 (2026-10-05). CHANGE branch: review →
+production change → stale evidence → revalidation (goal-3-validation § 2, eval 16).
+JUSTIFY branch: a third-round design objection (return NaN instead of raising) was
+declined with evidence — native `1/0` raises, the PR's own RED-verified test encodes
+the raising contract, NaN silently propagates — with NO code change and validation
+re-run PASSED (exit 0, nothing stale); worksheet instance in the drill repo
+(`review-response-v3-justified.md`), summarized in
+[../../goal-4-iteration.md](../../goal-4-iteration.md) § 2. The upstream reply itself
+was not posted (REMOTE_WRITE not granted).**
 
 ## Setup
 A published PR fixes a confirmed bug. A maintainer comments: "I don't think we should

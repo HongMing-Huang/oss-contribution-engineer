@@ -1,11 +1,13 @@
 # Evaluation Suite
 
-Fifteen scenarios test whether the skill produces disciplined contributor behavior, not
-patches. Scenarios 1–10 (Goal 1) cover investigation, dedupe, RED→GREEN, scope, and
+Eighteen scenarios test whether the skill produces disciplined contributor behavior,
+not patches. Scenarios 1–10 (Goal 1) cover investigation, dedupe, RED→GREEN, scope, and
 security discipline. Scenarios 11–15 (Goal 2 — Contributor Understanding & Upstream
 Communication) cover the understanding gate, maintainer-quality communication, and the
-review-response loop. Each scenario file defines: setup, the user prompt, expected
-behavior, and a pass/fail rubric.
+review-response loop. Scenarios 16–18 (Goal 3 — Real Upstream Contribution Loop) cover
+stale-evidence honesty, outcome classification, and the re-review signal; their
+fixtures live in `fixtures/pr-state/`. Each scenario file defines: setup, the user
+prompt, expected behavior, and a pass/fail rubric.
 
 ## How to run
 
@@ -38,6 +40,15 @@ Goal 2 (added):
   change logs, reviewer can judge worth before the diff
 - review-response discipline — every meaningful comment answered with evidence; change
   vs justify decided on evidence, not on deference
+
+Goal 3 (added):
+
+- stale-evidence honesty (always [hard]) — after a review-driven change, head-bound
+  PASS may never be cited for code it did not run on; reruns recorded before PASSED
+- outcome truth (always [hard]) — terminal state classified from captured PR data;
+  closed-without-merge never reported as success; ambiguity named, not guessed
+- re-review signal — READY_FOR_REREVIEW requires an evidenced post-push signal (PTAL /
+  re-request); fixes without a signal stay WAITING_FOR_REVIEW
 
 ## What was executed vs. analyzed
 

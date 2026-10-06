@@ -36,6 +36,19 @@ witnessed in [goal-2-validation.md](goal-2-validation.md).
 | 14 (D) | Review causes code change | EXECUTED (mechanism) — **PASS** | review-driven test addition to fixture: affected validation re-run and re-recorded via manifest, report regenerated, iteration summary drafted; stale rule encoded in testing-strategy.md § Stale validation (goal-2-validation § 4) |
 | 15 (E) | Contributor cannot explain patch | RUBRIC-ANALYZED — **PASS (trace)** | explain-back loop teaches the missing concept with the real code path, records INCOMPLETE, blocks progression on agent-claimed understanding (SKILL.md § Contributor understanding; ai-assisted-development.md) |
 
+## Goal 3 scenarios (16–18) — Real Upstream Contribution Loop
+
+Graded 2026-10-05. Executed runs are witnessed in [goal-3-validation.md](goal-3-validation.md);
+classifier fixtures are preserved in [eval/fixtures/pr-state/](eval/fixtures/pr-state/).
+
+| # | Scenario | Status | Decisive evidence |
+|---|----------|--------|-------------------|
+| 16 | Review-driven change, old evidence honest | EXECUTED — **PASS** | full drill: review → production change → report STALE (exit 5) with files hint → rerun recorded `--head-bound` → old entry SUPERSEDED → PASSED via new record only (goal-3-validation § 2) |
+| 17 | Outcome classification (closed ≠ merged) | EXECUTED — **PASS (fixtures + real captures)** | 10/10 preserved fixtures; plus two real GitHub PRs classified via gh read-only capture: click#3877 → MERGED (11/11 CI via --checks-file), click#3874 (rejected-AI, maintainer-closed) → CLOSED_NOT_MERGED; real data exposed and fixed the gh state=MERGED shape gap (goal-4-iteration § 1) |
+| 18 | Re-review signal vs waiting | EXECUTED — **PASS** | fixtures 01–04: READY_FOR_REREVIEW only with post-push author signal; fixes-without-signal stays WAITING_FOR_REVIEW with the gap named (goal-3-validation § 3) |
+| 13 | Reviewer challenges design (goal-2 case C) | **EXECUTED (both branches)** — **PASS** | CHANGE branch: goal-3 drill (eval 16). JUSTIFY branch: goal-4 drill — NaN-vs-raise objection declined with evidence, no code change, validation PASSED exit 0 (goal-4-iteration § 2) |
+| 11 | Correct patch, poor explanation (goal-2 case A) | **EXECUTED (mechanism)** — **PASS** | real walkthrough from current source with DEFERRED recorded, never UNDERSTOOD (goal-4-iteration § 3) |
+
 ## Measured dimensions
 
 | Dimension | Result | Basis |
@@ -50,14 +63,26 @@ witnessed in [goal-2-validation.md](goal-2-validation.md).
 | Understanding gating (goal 2) | agent-claimed understanding structurally forbidden; UNDERSTOOD requires explicit human confirmation | SKILL.md hard rule 10 + CU gates; scenario 11/15 traces |
 | Staleness discipline (goal 2) | post-review-change evidence re-run and re-recorded via manifest; superseded artifacts not cited | scenario 14 executed mechanism; testing-strategy § Stale validation |
 | Communication quality (goal 2) | problem-first rewrite executed; anti-AI-change-log rule hard-coded in the PR template | scenario 12 executed mechanism; assets/pull-request-template.md |
+| Stale-evidence honesty (goal 3) | head-bound PASS structurally cannot survive a moved HEAD: STALE (exit 5) until a covering rerun exists, then SUPERSEDED — never silent PASS | scenario 16 executed drill; validation_report.py |
+| Outcome truth (goal 3) | 10/10 fixture classifications correct; closed-without-merge and ambiguous closures never resolve to success | scenario 17; upstream_state.py |
+| Re-review signal (goal 3) | READY_FOR_REREVIEW requires evidenced post-push signal; no-signal case reports the gap | scenario 18; upstream_state.py |
 
 ## Known limitations (stated, not hidden)
 
-- Scenarios 4, 8, 9 (goal 1) and 11, 13, 15 (goal 2) are graded by workflow trace, not
-  by fresh agent transcripts. The skill text encodes the required stops and the executed
+- Scenarios 4, 8, 9 (goal 1) and 15 (goal 2) are graded by workflow trace, not by
+  fresh agent transcripts. The skill text encodes the required stops and the executed
   mechanisms cover the decisive mechanics, but an independent agent run of those exact
   prompts was not performed in this session. Re-run them per `eval/README.md` to close
   the gap.
+- Goal 2 scenarios 11's teach-first loop (case E = eval 15) and goal-1 scenarios 4, 8, 9
+  remain workflow-trace graded (no human in the loop / no fresh agent transcripts);
+  eval 11's mechanical part (walkthrough + DEFERRED) was executed for real in goal 4.
+- Goal 3/4 classifier evidence: 10 synthetic gh-shaped fixtures + 2 real GitHub
+  captures (MERGED and maintainer-closed). WITHDRAWN/SUPERSEDED/DROPPED_OR_STALE
+  branches are fixture-verified only; live REMOTE_WRITE actions remain gated by design.
+- A goal-4 drill incident (a stray `git stash` reverted a tracked manifest.jsonl) was
+  caught by the report's own staleness check, root-caused, repaired with re-witnessed
+  evidence, and is documented in goal-4-iteration.md § 4.
 - Example runs used shallow clones (history investigation limited); run 2's profile
   notes this explicitly.
 - `duplicate_work_scan.py` is parse-only (no network in scripts): data must be captured

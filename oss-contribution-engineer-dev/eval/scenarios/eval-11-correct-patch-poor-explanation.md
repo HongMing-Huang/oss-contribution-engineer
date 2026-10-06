@@ -1,8 +1,11 @@
 # Eval 11 — Correct patch, poor explanation (Goal 2 case A)
 
-**Status in this delivery: RUBRIC-ANALYZED (trace basis: SKILL.md § Contribution
-state machine gates REGRESSION→CONTRIBUTOR_UNDERSTANDING and
-CONTRIBUTOR_UNDERSTANDING→REVIEW; assets/change-walkthrough.md; hard rule 10).**
+**Status: EXECUTED (mechanism) as of goal 4 (2026-10-05) — a real Change Walkthrough
+was produced from the drill repo's current source (file:line read immediately before
+writing) with the understanding status recorded as DEFERRED, never UNDERSTOOD; the
+artifact lives in the drill repo (`/tmp/oss-goal3-loop/change-walkthrough.md`) and its
+content is summarized in [../../goal-4-iteration.md](../../goal-4-iteration.md) § 3.
+The interactive teach-first loop (case E, eval 15) remains rubric-analyzed.**
 
 ## Setup
 Repository with a real bug the contributor asked to have fixed (fixture-equivalent:

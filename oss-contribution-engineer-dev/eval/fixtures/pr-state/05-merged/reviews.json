@@ -1,0 +1,10 @@
+[
+ {
+  "state": "APPROVED",
+  "user": {
+   "login": "maintainer-a"
+  },
+  "submitted_at": "2026-09-29T09:30:00Z",
+  "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ }
+]
