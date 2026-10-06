@@ -7,6 +7,26 @@ falsify it. Produce assets/review-report.md.
 Setup: re-read the diff fresh (`git diff <base>...HEAD`), the PATCH PLAN, and the
 regression test before reviewing.
 
+## Representation-First Review (design-sensitive patches — advisory lens)
+
+For non-trivial patches (new abstractions, new state machines, public contracts,
+error-handling redesigns), review the REPRESENTATION before the diff details —
+complexity accumulates through poor representations, and each special case added
+is often compensation for one:
+
+- **STATE** — what state does this patch manipulate? Who owns it?
+- **DATA** — which representations/data structures carry it? Is the shape right
+  for the domain, or is a branch compensating for a poor representation?
+- **OWNERSHIP** — who creates, mutates and destroys each piece?
+- **RELATIONSHIPS** — which entities now depend on each other?
+- **INVARIANTS** — what must remain true, and where is it enforced?
+- **SPECIAL CASES** — is each new branch/fallback a real domain case, or
+  compensation for a representation that does not fit?
+
+This lens is **advisory**: it shapes review comments and the maintainer-quality
+PR description for design-sensitive patches. It is not a universal blocking gate
+— small, obvious fixes pass without it.
+
 ## Falsification checklist
 
 **Root cause & assumptions**

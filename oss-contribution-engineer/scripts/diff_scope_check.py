@@ -46,6 +46,17 @@ CONFIG_HINTS = [".github/", ".gitlab/", ".circleci/", ".gitea/"]
 BUDGET = {"production_files": 5, "test_files": 3, "new_dependencies": 0}
 
 
+def _diff_added_lines(repo: Path, base: str, path: str):
+    """Return (rc, added '+' lines) of base..worktree for one file."""
+    p = subprocess.run(["git", "-C", str(repo), "diff", base, "--", path],
+                       capture_output=True, text=True, shell=False)
+    if p.returncode != 0:
+        return p.returncode, "", ""
+    added = [l[1:] for l in p.stdout.splitlines()
+             if l.startswith("+") and not l.startswith("+++")]
+    return 0, "\n".join(added), ""
+
+
 def make_git_runner(repo: Path):
     repo_arg = str(repo)
 
@@ -97,8 +108,14 @@ def main() -> int:
     ap.add_argument("repo", nargs="?", default=".")
     ap.add_argument("--base", default="HEAD", help="base ref (default HEAD; e.g. origin/main)")
     ap.add_argument("--intended", default="", help="comma-separated intended file paths")
+    ap.add_argument("--hats", default="", help="declared hats for production files: path=BEHAVIOR|REFACTOR,...")
+    ap.add_argument("--show-hats", action="store_true", help="include per-file two-hats classification")
+    ap.add_argument("--show-delta", action="store_true", help="include complexity delta in JSON output")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
+    hats_arg = args.hats
+    show_hats = args.show_hats
+    show_delta = args.show_delta
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
         print("error: %s is not a directory" % repo, file=sys.stderr)
@@ -175,6 +192,75 @@ def main() -> int:
         budget_findings.append("dependency surface changed (%s) — verify every dependency "
                                "change is required by the fix" % ", ".join(lock_or_manifest))
 
+    # ---- V5.3 complexity delta + two-hats classification ----
+    # Complexity accumulates incrementally: surface what a patch ADDS so the
+    # new concepts can be justified. Not an automatic rejection.
+    hats_declared = {}
+    for pair in (hats_arg or "").split(","):
+        if "=" in pair:
+            fp, hat = pair.split("=", 1)
+            hats_declared[fp.strip()] = hat.strip().upper()
+
+    import re as _re
+    DEF_PAT = _re.compile(
+        r"^\s*(?:async\s+)?(?:def|function|fn|func)\s+\w+|^\s*(?:pub\s+)?"
+        r"(?:class|struct|trait|interface|enum)\s+\w+", _re.M)
+    BRANCH_PAT = _re.compile(r"^\s*(?:if|elif|else\b|match|case|switch|except|catch\b)", _re.M)
+    FLAG_PAT = _re.compile(r"add_argument\(|--[a-z][a-z-]+", _re.M)
+    IMPORT_PAT = _re.compile(r"^\s*(?:import |from \w+ |require\(|use \w+|#include)", _re.M)
+
+    delta = {"new_symbols": 0, "new_branches": 0, "new_flags": 0,
+             "new_imports": 0, "added_lines_production": 0,
+             "new_public_contracts": 0, "per_file": []}
+    hats = []
+    BOOKKEEPING_PREFIXES = (".oss-contrib-evidence/", ".oss-contrib/",
+                            "__pycache__/", ".git/")
+    for path, info in sorted(files.items()):
+        if path.startswith(BOOKKEEPING_PREFIXES) or "/__pycache__/" in path \
+                or path.endswith(".pyc"):
+            continue  # runtime bookkeeping — not patch scope, not production
+        cat = info["category"]
+        entry = {"path": path, "category": cat}
+        if info.get("untracked") or (info["added"] is None):
+            entry["added"] = None
+        else:
+            entry["added"] = info["added"]
+        added_prod = 0
+        if cat == "production" and (info["added"] or 0) > 0:
+            rc2, out2, _ = _diff_added_lines(repo, base, path)
+            if rc2 == 0:
+                added_lines = out2
+                defs = len(DEF_PAT.findall(added_lines))
+                branches = len(BRANCH_PAT.findall(added_lines))
+                flags = len(FLAG_PAT.findall(added_lines))
+                imports = len(IMPORT_PAT.findall(added_lines))
+                added_prod = len(added_lines.splitlines())
+                delta["new_symbols"] += defs
+                delta["new_branches"] += branches
+                delta["new_flags"] += flags
+                delta["new_imports"] += imports
+                delta["added_lines_production"] += added_prod
+                entry["complexity"] = {"new_symbols": defs, "new_branches": branches,
+                                       "new_flags": flags, "new_imports": imports,
+                                       "added_lines": added_prod}
+                if defs and not info.get("formatting_only"):
+                    entry["hint"] = "adds new symbol definitions — BEHAVIOR or REFACTOR?"
+        # two hats: TEST / MECHANICAL / declared / undecided
+        if cat == "test":
+            entry["hat"] = "TEST"
+        elif info.get("formatting_only"):
+            entry["hat"] = "MECHANICAL"
+        elif path in hats_declared:
+            entry["hat"] = hats_declared[path]
+        elif cat == "production":
+            entry["hat"] = "UNDECLARED (BEHAVIOR or REFACTOR — declare via --hat)"
+        hats.append(entry)
+        if cat == "test":
+            pass
+    delta["per_file"] = [e for e in hats if e["category"] == "production"]
+    delta["justification_required"] = (
+        delta["new_symbols"] >= 3 or delta["new_imports"] > 0
+        or delta["added_lines_production"] > 200)
     report = {
         "type": "SCOPE_AUDIT",
         "schema_version": 1,
@@ -194,6 +280,8 @@ def main() -> int:
         "formatting_only_files": formatting,
         "budget_findings": budget_findings,
         "budget_defaults": BUDGET,
+        "complexity_delta": delta if show_delta else None,
+        "hats": hats if show_hats else None,
         "conclusion": "SCOPE_FINDINGS" if (unintended or budget_findings) else "WITHIN_SCOPE",
         "notes": ["categories are heuristic path patterns, not semantics — verify flagged files",
                   "budget is the small-fix default from references/patch-design.md; justified "

@@ -43,6 +43,14 @@ decide these): reading repo-local rules and judging conflicts, judging whether a
 is real, choosing among routing/patching strategies, contributor-understanding
 conversations, anything REMOTE_WRITE, and any security finding.
 
+## Doctrine (frozen)
+
+The engineering doctrine is closed as of V5.3 and represented as lenses:
+REAL PROBLEM · REPRODUCE · ONE LOGICAL CHANGE · DATA/RELATIONSHIPS ·
+SIMPLE OVER CLEVER · READABILITY · COMPLEXITY DELTA · TWO HATS ·
+HUMAN OWNERSHIP · REVIEW AS COLLABORATIVE DESIGN · MAINTAINER TIME.
+New quotations are not collected; new mechanics land as gates and tests.
+
 ## Hard rules
 
 These override convenience, and repository-local rules (discovered in recon) override

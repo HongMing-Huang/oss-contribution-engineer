@@ -46,6 +46,29 @@ the user, and let them decide (fix separately, split the patch, or continue). Ne
 silently expand the task. Bigger is not automatically wrong — a fix that genuinely needs
 5 files is fine when the plan said so — *unexpected* growth is the problem.
 
+## Two Hats: separate refactoring from behavior change
+
+Classify every meaningful hunk as **BEHAVIOR**, **TEST**, **REFACTOR**, or
+**MECHANICAL** (formatting). A bug fix wearing two hats is how unrelated cleanup
+rides into a regression fix. When preparatory refactoring is genuinely required:
+prove behavior preservation first (tests pass before and after, no production
+semantic change), then make the behavioral change as its own step. Reuse the
+scope audit: `diff_scope_check.py` classifies files and flags MECHANICAL /
+formatting-only churn; `--hats` lets the PATCH PLAN declare each file's hat and
+the audit reports undeclared ones.
+
+## Complexity Delta
+
+Complexity accumulates incrementally — each small addition is locally reasonable
+and globally expensive. For non-trivial production patches, `diff_scope_check.py
+--show-delta --json` surfaces the delta: new symbol definitions, new branches,
+new flags, new imports, new public contracts, added production lines. This is
+**not** an automatic rejection: meaningful work sometimes needs new concepts.
+It requires that each meaningful addition be justified in the PATCH PLAN and the
+PR description ("new state machine because the protocol requires it", not
+"seemed cleaner"). A delta with new symbols and zero test-file changes is a
+review red flag.
+
 ## Scope audit (before PR preparation)
 
 ```bash

@@ -139,22 +139,180 @@ def summarize(report: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- V5.3 receipts
+# Discovery (scan) proves which documents EXIST; it does not prove they were READ.
+# RULES_DISCOVERED records the finding; RULES_READ records full reading of each
+# binding document. Reading does not prove semantic understanding — but keyword
+# excerpts alone may never stand in for the full rules.
+
+BINDING_KINDS = {"ai_instruction", "governance_doc"}
+
+
+def repository_identity(repo: Path) -> str:
+    """Deterministic identity: origin slug when available, else
+    'local-' + sha256(realpath)[:12]. Mirrors contribution_session."""
+    import subprocess
+    p = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"],
+                       capture_output=True, text=True, shell=False)
+    if p.returncode == 0:
+        m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", p.stdout.strip())
+        if m:
+            return m.group(1)
+    import hashlib
+    root = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+                          capture_output=True, text=True, shell=False)
+    fp = hashlib.sha256(
+        str(Path(root.stdout.strip() or str(repo)).resolve()).encode()).hexdigest()[:12]
+    return "local-" + fp
+
+
+def _sha256_file(path: Path) -> str | None:
+    import hashlib
+    if not path.exists():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def binding_manifest(repo: Path, max_depth: int) -> dict:
+    """RULES_DISCOVERED artifact: the scan's binding documents (AI instructions +
+    governance docs) with digests and scope. Templates are listed as discovered
+    but are not binding."""
+    report = scan(repo, max_depth)
+    binding, discovered = [], []
+    for f in report.get("instruction_files", []):
+        kind = f.get("kind")
+        scope = "root" if "/" not in f["path"] else "nested:" + f["path"].rsplit("/", 1)[0]
+        entry = {"path": f["path"], "digest": _sha256_file(repo / f["path"]),
+                 "kind": kind, "scope": scope}
+        discovered.append(entry)
+        if kind in BINDING_KINDS:
+            binding.append(entry)
+    artifact = {
+        "type": "RULES_DISCOVERED",
+        "schema_version": 1,
+        "repository": repository_identity(repo),
+        "repository_id": repository_identity(repo),
+        "base_sha": None,
+        "generated_by": "contribution_rules_scan.py binding-manifest",
+        "created_at": __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc).isoformat(),
+        "binding": binding,
+        "discovered": discovered,
+        "note": "binding = AI instructions + governance docs; templates are "
+                "discovered but not binding. Nested/subsystem rules override "
+                "broader defaults where applicable.",
+    }
+    import hashlib
+    artifact["digest"] = hashlib.sha256(json.dumps(
+        {k: v for k, v in artifact.items() if k != "digest"},
+        sort_keys=True).encode()).hexdigest()
+    return artifact
+
+
+def read_receipt(repo: Path, manifest_path: Path, claimed: list[dict]) -> dict:
+    """RULES_READ artifact from claims of FULLY reading binding documents.
+    Each claim needs path, scope, why. Digests are recomputed from current disk
+    and must match the manifest (a changed doc requires re-reading)."""
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("type") != "RULES_DISCOVERED":
+        print("error: %s is not a RULES_DISCOVERED artifact" % manifest_path,
+              file=sys.stderr)
+        raise SystemExit(2)
+    binding = {b["path"]: b for b in manifest.get("binding", [])}
+    covered, problems = [], []
+    for c in claimed:
+        path = c["path"]
+        if path not in binding:
+            problems.append("claimed %s is not a binding document in the manifest"
+                            % path)
+            continue
+        current = _sha256_file(repo / path)
+        if current != binding[path]["digest"]:
+            problems.append("%s changed since the scan (digest mismatch) — "
+                            "re-scan and re-read" % path)
+            continue
+        if not c.get("scope"):
+            problems.append("%s claim missing scope" % path)
+            continue
+        if not c.get("why"):
+            problems.append("%s claim missing why-applicable" % path)
+            continue
+        covered.append({"path": path, "digest": current, "scope": c["scope"],
+                        "why": c["why"], "read_completeness": "full"})
+    uncovered = [p2 for p2 in binding if p2 not in {c2["path"] for c2 in covered}]
+    artifact = {
+        "type": "RULES_READ",
+        "schema_version": 1,
+        "repository": manifest.get("repository_id") or repository_identity(repo),
+        "repository_id": manifest.get("repository_id") or repository_identity(repo),
+        "base_sha": None,
+        "generated_by": "contribution_rules_scan.py read-receipt",
+        "created_at": __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc).isoformat(),
+        "manifest_digest": manifest.get("digest"),
+        "covered": covered,
+        "problems": problems,
+        "uncovered": [{"path": u, "digest": binding[u]["digest"],
+                       "kind": binding[u]["kind"]} for u in sorted(uncovered)],
+        "read_completeness": "full (each covered document read completely; "
+                             "partial reads are not claimable)",
+        "note": "RULES_READ proves full reading, not semantic understanding",
+    }
+    import hashlib
+    artifact["digest"] = hashlib.sha256(json.dumps(
+        {k: v for k, v in artifact.items() if k != "digest"},
+        sort_keys=True).encode()).hexdigest()
+    return artifact
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Locate and excerpt repository-local contribution rules.")
-    ap.add_argument("repo", nargs="?", default=".")
-    ap.add_argument("--max-depth", type=int, default=4)
-    ap.add_argument("--json", action="store_true")
-    args = ap.parse_args()
-    repo = Path(args.repo).resolve()
+    sub = ap.add_subparsers(dest="cmd")
+    p_scan = sub.add_parser("scan", help="discover repository-local rules (keyword excerpts)")
+    p_scan.add_argument("repo_pos", nargs="?", default=None)
+    p_scan.add_argument("--max-depth", type=int, default=4)
+    p_scan.add_argument("--json", action="store_true")
+    p_bm = sub.add_parser("binding-manifest", help="emit a RULES_DISCOVERED artifact (binding docs + digests)")
+    p_bm.add_argument("repo_pos", nargs="?", default=None)
+    p_bm.add_argument("--max-depth", type=int, default=4)
+    p_rr = sub.add_parser("read-receipt", help="emit a RULES_READ artifact from full-read claims")
+    p_rr.add_argument("repo_pos", nargs="?", default=None)
+    p_rr.add_argument("--manifest", required=True, help="RULES_DISCOVERED artifact JSON")
+    p_rr.add_argument("--claimed", action="append", required=True,
+                      help="'path::scope::why' for each binding doc fully read")
+    args, extra = ap.parse_known_args()
+    repo = Path(args.repo_pos or getattr(args, "repo", ".") or ".").resolve()
     if not repo.is_dir():
         print(f"error: {repo} is not a directory", file=sys.stderr)
         return 3
-    report = scan(repo, max(1, args.max_depth))
-    if args.json:
-        print(json.dumps(report, indent=2))
-    else:
-        print(summarize(report))
-    return 0
+    if args.cmd in (None, "scan"):
+        report = scan(repo, max(1, args.max_depth))
+        if getattr(args, "json", False):
+            print(json.dumps(report, indent=2))
+        else:
+            print(summarize(report))
+        return 0
+    if args.cmd == "binding-manifest":
+        artifact = binding_manifest(repo, max(1, args.max_depth))
+        print(json.dumps(artifact, indent=2))
+        return 0
+    if args.cmd == "read-receipt":
+        claimed = []
+        for c in args.claimed:
+            parts = c.split("::")
+            if len(parts) != 3:
+                print("error: --claimed must be 'path::scope::why'", file=sys.stderr)
+                return 2
+            claimed.append({"path": parts[0].strip(), "scope": parts[1].strip(),
+                            "why": parts[2].strip()})
+        artifact = read_receipt(repo, Path(args.manifest), claimed)
+        print(json.dumps(artifact, indent=2))
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 
 
 if __name__ == "__main__":

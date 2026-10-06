@@ -124,3 +124,16 @@ content "that senders don't understand or cannot explain". For AI-assisted work 
 the hard boundary: the agent may draft, test, and explain, but understanding and
 ownership live with the human — the skill's job is to make that understanding real
 (walkthrough, explain-back), never to simulate it.
+
+
+## Doctrine freeze (V5.3)
+
+The doctrine above is now closed and represented as engineering lenses:
+
+REAL PROBLEM · REPRODUCE · ONE LOGICAL CHANGE · DATA/RELATIONSHIPS ·
+SIMPLE OVER CLEVER · READABILITY · COMPLEXITY DELTA · TWO HATS ·
+HUMAN OWNERSHIP · REVIEW AS COLLABORATIVE DESIGN · MAINTAINER TIME
+
+New developer quotations are not added after this point unless they expose a
+genuinely missing engineering rule. New mechanics land as executable gates and
+tests, not as new prose.

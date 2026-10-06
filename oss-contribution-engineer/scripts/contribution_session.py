@@ -499,6 +499,7 @@ def gate_requirements(state: str) -> dict:
             "checks": [
                 ("recon artifact", lambda repo, s: artifact_gate(repo, s, "recon",
                                                                  "REPOSITORY_RECON")),
+                ("rules read", check_rules_read),
             ],
             "authority": [],
         },
@@ -626,6 +627,48 @@ def scope_audit_gate(repo, s):
 
 def understanding_gate(repo, s):
     return check_understanding(repo, s)
+
+
+def check_rules_read(repo, s) -> list[str]:
+    """V5.3: RULES_DISCOVERED (the scan) is not proof of reading. The runtime
+    discovers binding docs itself (auto-scan); when any exist, a RULES_READ
+    receipt covering every binding path with a digest matching the CURRENT
+    file is required before CANDIDATE. If the repo has no binding docs, the
+    gate passes (nothing to read). Nested/subsystem rules override broader
+    defaults where applicable."""
+    from contribution_rules_scan import binding_manifest as _scan_binding
+    manifest = _scan_binding(repo, max_depth=4)
+    binding = manifest.get("binding") or []
+    if not binding:
+        return []  # no binding rules discovered — nothing to read
+    read_files = (s.get("artifacts") or {}).get("rules_read") or []
+    if not read_files:
+        return ["RULES_DISCOVERED without RULES_READ: %d binding document(s) "
+                "(%s) discovered but not proven fully read — read them "
+                "completely and record a read-receipt (contribution_rules_scan.py "
+                "read-receipt)" % (len(binding),
+                                   ", ".join(b["path"] for b in binding))]
+    problems = validate_artifact(Path(read_files[-1]), "RULES_READ")
+    if problems:
+        return problems
+    receipt = json.loads(Path(read_files[-1]).read_text())
+    covered = {c["path"]: c for c in receipt.get("covered", [])}
+    import hashlib as _h
+    missing = []
+    for b in binding:
+        c = covered.get(b["path"])
+        current = _h.sha256((repo / b["path"]).read_bytes()).hexdigest() \
+            if (repo / b["path"]).exists() else None
+        if not c:
+            missing.append("binding doc %s not proven read" % b["path"])
+        elif c["digest"] != current:
+            missing.append("%s changed after it was read — re-read and "
+                           "re-record" % b["path"])
+    if receipt.get("uncovered"):
+        missing.append("receipt leaves %d binding doc(s) uncovered: %s"
+                       % (len(receipt["uncovered"]),
+                          ", ".join(u["path"] for u in receipt["uncovered"])))
+    return missing
 
 
 def check_open_pr_receipt(repo, s):
@@ -862,10 +905,30 @@ def cmd_record(repo: Path, args) -> int:
     s = load_session(repo)
     kind = args.kind
     if kind not in ("recon", "dedupe", "walkthrough", "scope-audit", "patch-intent",
-                    "plan", "pack", "receipt"):
+                    "plan", "pack", "receipt", "rules-discovered", "rules-read"):
         print("error: --kind must be recon|dedupe|walkthrough|scope-audit|"
-              "patch-intent|plan|pack|receipt", file=sys.stderr)
+              "patch-intent|plan|pack|receipt|rules-discovered|rules-read",
+              file=sys.stderr)
         return 2
+    if kind in ("rules-discovered", "rules-read"):
+        files = [f for f in (args.file or []) if Path(f).exists()]
+        if not files:
+            print("error: %s requires --file (the structured artifact)"
+                  % kind, file=sys.stderr)
+            return 2
+        expected = "RULES_DISCOVERED" if kind == "rules-discovered" else "RULES_READ"
+        problems = validate_artifact(Path(files[0]), expected)
+        if problems:
+            for pr in problems:
+                print("error: %s" % pr, file=sys.stderr)
+            return 2
+        key = {"rules-discovered": "rules_discovered",
+               "rules-read": "rules_read"}[kind]
+        s["artifacts"].setdefault(key, []).extend(files)
+        s["history"].append({"at": now(), "event": "record", "kind": kind})
+        save_session(repo, s)
+        print("recorded: %s" % kind)
+        return 0
     if kind == "scope-audit":
         files = [f for f in (args.file or []) if Path(f).exists()]
         if not files:
