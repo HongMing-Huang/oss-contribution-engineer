@@ -363,6 +363,39 @@ def test_merged_is_success_closed_is_not(repo):
     assert "NOT a merged contribution" in r.stdout
 
 
+def test_posthoc_grant_cannot_legitimize_observed_pr(repo):
+    """V5.2: an OPEN_PR grant recorded AFTER the upstream capture must be
+    refused by record-remote-action — authorization cannot be manufactured
+    post-hoc to legitimize an already-observed remote action."""
+    r = run(SESSION, str(repo), "init", "--task-id", "posthoc", "--goal",
+            compiled_goal(repo, "posthoc"))
+    assert r.returncode == 0, r.stderr
+    # 1) capture the upstream PR FIRST (observation)
+    pr = repo / "pr.json"
+    pr.write_text(json.dumps({"pr": {"number": 11, "state": "open",
+                                     "user": {"login": "someone"}},
+                              "reviews": [], "timeline": []}))
+    r = run(SESSION, str(repo), "upstream", "--pr-json", str(pr))
+    assert r.returncode == 0
+    assert session_state(repo)["upstream"]["observed"] is True
+    # 2) THEN create an OPEN_PR grant (the grant itself is a human decision and
+    #    is allowed; legitimization happens only at receipt time)
+    r = run(SESSION, str(repo), "set-authority", "--grant", "remote",
+            "--action", "OPEN_PR", "--target", "r#11", "--evidence-ref",
+            "later grant", "--by-user", "user")
+    assert r.returncode == 0, r.stderr
+    grant_id = session_state(repo)["authority"]["actions"][-1]["grant_id"]
+    # 3) receipting it must be refused
+    r = run(SESSION, str(repo), "record-remote-action", "--grant-id", grant_id,
+            "--resulting", "r#11", "--by-user", "user")
+    assert r.returncode == 1
+    assert "post-hoc" in r.stderr
+    s = session_state(repo)
+    assert s["authority"]["actions"][-1]["consumed_at"] is None, \
+        "the refused grant must remain unconsumed"
+    assert s["authority"]["receipts"] == [], "no receipt may be recorded"
+
+
 def init_and_reach_pr_ready(repo: Path, task: str):
     to_green(repo, task)
     run(SESSION, str(repo), "advance", "--to", "REGRESSION")

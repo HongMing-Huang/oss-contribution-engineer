@@ -1,5 +1,5 @@
 {
-  "ledger_version": 3,
+  "ledger_version": 4,
   "updated": "2026-10-06",
   "rule": "README and SKILL.md derive their claims from this file. ADVISORY must never be described as ENFORCED. Every ENFORCED entry cites automated tests (tests/<file>.py#<test-id>); a claim without executable evidence is downgraded.",
   "capabilities": {
@@ -165,7 +165,8 @@
       "tests": [
         "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization",
         "tests/test_session_runtime.py#test_in_review_receipt_target_mismatch_rejected",
-        "tests/test_session_runtime.py#test_in_review_accepts_matching_receipt"
+        "tests/test_session_runtime.py#test_in_review_accepts_matching_receipt",
+        "tests/test_black_box_lifecycle.py#test_posthoc_grant_cannot_legitimize_observed_pr"
       ],
       "evidence": "IN_REVIEW requires an OPEN_PR action receipt bound to a prior grant; target must match the captured upstream identity"
     },
@@ -182,9 +183,10 @@
       "status": "ENFORCED",
       "tests": [
         "tests/test_session_runtime.py#test_good_candidate_requires_dedupe_bundle",
-        "tests/test_session_runtime.py#test_classification_records_evidence_provenance"
+        "tests/test_session_runtime.py#test_classification_records_evidence_provenance",
+        "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization"
       ],
-      "evidence": "GOOD_CANDIDATE requires a recorded dedupe bundle; provenance persisted in classification_evidence"
+      "evidence": "GOOD_CANDIDATE requires a recorded dedupe bundle; parse-search results fold into the SAME DUPLICATE_WORK_EVIDENCE bundle (keyword_issue_search / keyword_pr_search, repository_id + capture timestamp + digest); provenance persisted in classification_evidence"
     },
     "upstream_review_lifecycle": {
       "status": "ENFORCED",

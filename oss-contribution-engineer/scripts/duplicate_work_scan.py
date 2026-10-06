@@ -25,9 +25,12 @@ Exit codes: 0 = parsed, 2 = usage error, 3 = missing input file, 4 = malformed J
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -54,6 +57,134 @@ def capture_commands(slug: str, number: int) -> list[str]:
     cmds.append("# optional: gh search issues '<keywords>' --repo %s --include-prs --json "
                 "number,title,state,url,updatedAt > search.json" % slug)
     return cmds
+
+
+def repository_identity(repo: Path) -> str:
+    """Deterministic repository identity: origin slug (owner/repo) when a remote
+    exists, else 'local-' + first 12 hex of sha256(realpath). Mirrors
+    contribution_session.repository_identity so bundles bind to sessions."""
+    p = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"],
+                       capture_output=True, text=True, shell=False)
+    if p.returncode == 0:
+        m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", p.stdout.strip())
+        if m:
+            return m.group(1)
+    root = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+                          capture_output=True, text=True, shell=False)
+    fp = hashlib.sha256(
+        str(Path(root.stdout.strip() or str(repo)).resolve()).encode()).hexdigest()[:12]
+    return "local-" + fp
+
+
+def digest_of(body: dict) -> str:
+    payload = {k: v for k, v in body.items() if k != "digest"}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def build_bundle(repo: Path, issue_file: Path | None, timeline_files: list[Path],
+                 search_files: list[Path], base_sha: str | None = None) -> dict:
+    """One coherent DUPLICATE_WORK_EVIDENCE bundle: issue state/timeline, cross
+    references, open/merged PR references, keyword issue/PR search results,
+    capture completeness notes, capture timestamp and repository identity —
+    parse-search is folded into the same bundle instead of remaining a
+    disconnected report."""
+    from datetime import datetime, timezone
+    issue = load_json(issue_file) if issue_file else {}
+    timeline: list[dict] = []
+    for tf in timeline_files:
+        data = load_json(tf)
+        if not isinstance(data, list):
+            print("error: %s is not a JSON array (timeline responses are arrays)"
+                  % tf, file=sys.stderr)
+            raise SystemExit(4)
+        timeline.extend(data)
+
+    cross_refs, commits, linked = [], [], []
+    for ev in timeline:
+        et = ev.get("event")
+        if et == "cross-referenced":
+            src = ev.get("source", {}).get("issue", {})
+            cross_refs.append({
+                "number": src.get("number"), "title": src.get("title"),
+                "state": src.get("state"),
+                "merged": (src.get("pull_request") or {}).get("merged_at") is not None,
+                "is_pr": "pull_request" in src,
+                "repository": (src.get("repository") or {}).get("full_name"),
+                "url": src.get("html_url"),
+            })
+        elif et == "referenced" and ev.get("commit_id"):
+            commits.append({"sha": ev["commit_id"][:12], "url": ev.get("commit_id")})
+        elif et == "connected":
+            subj = ev.get("subject", {})
+            linked.append({"number": subj.get("number"), "title": subj.get("title"),
+                           "state": subj.get("state")})
+
+    searches = []
+    for sf in search_files:
+        sdata = load_json(sf)
+        if isinstance(sdata, dict):
+            sdata = sdata.get("items", sdata.get("results", []))
+        if not isinstance(sdata, list):
+            print("error: %s is not a JSON array of search results" % sf,
+                  file=sys.stderr)
+            raise SystemExit(4)
+        searches.append({
+            "file": Path(sf).name,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "results": [{"number": r.get("number"), "title": r.get("title"),
+                         "state": r.get("state"),
+                         "url": r.get("html_url") or r.get("url")} for r in sdata],
+        })
+
+    pr_refs = [r for r in cross_refs if r["is_pr"]]
+    bundle = {
+        "type": "DUPLICATE_WORK_EVIDENCE",
+        "schema_version": 2,
+        "repository": repository_identity(repo),
+        "repository_id": repository_identity(repo),
+        "base_sha": base_sha,  # binds the bundle to the session's revision
+        "generated_by": "duplicate_work_scan.py bundle",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "mode": "bundle",
+        "issue": {
+            "number": issue.get("number"), "title": issue.get("title"),
+            "state": issue.get("state"), "state_reason": issue.get("state_reason"),
+            "labels": [l.get("name") for l in issue.get("labels", [])],
+            "assignees": [a.get("login") for a in issue.get("assignees", [])],
+            "comments": issue.get("comments", 0),
+            "created_at": issue.get("created_at"),
+            "updated_at": issue.get("updated_at"),
+            "url": issue.get("html_url"),
+        },
+        "timeline_events_parsed": len(timeline),
+        "open_pr_references": [r for r in pr_refs if r["state"] == "open"],
+        "merged_pr_references": [r for r in pr_refs if r["merged"]],
+        "other_cross_references": [r for r in cross_refs if not r["is_pr"]],
+        "linked_events": linked,
+        "referencing_commits": commits,
+        "keyword_issue_search": searches,
+        "capture": {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "completeness": "timeline capped at the captured pages; keyword search "
+                            "capped by the capture — absence of signals does not "
+                            "prove availability",
+            "limitations": ["only GitHub via gh capture; other forges out of scope",
+                            "classification (AVAILABLE/CLAIMED/PR_EXISTS/...) is the "
+                            "caller's judgment"],
+        },
+        "dedupe_hints": [
+            "open/merged PR references suggest PR_EXISTS or possibly ALREADY_FIXED",
+            "'merged in own repo' for cross-repo references means merged in the "
+            "PR's repository (often a fork), not this one",
+            "assignees or comments announcing work suggest CLAIMED",
+            "absence of signals does not prove availability — search issues and "
+            "PRs by keyword too",
+        ],
+        "conclusion": "DATA_COLLECTED — classification is the caller's judgment; "
+                      "data may be incomplete",
+    }
+    bundle["digest"] = digest_of(bundle)
+    return bundle
 
 
 def parse_issue(issue_file: Path, timeline_files: list[Path]) -> dict:
@@ -189,10 +320,24 @@ def main() -> int:
     p_issue.add_argument("--issue-file", required=True)
     p_issue.add_argument("--timeline-file", action="append", default=[])
 
-    p_search = sub.add_parser("parse-search", help="render captured search results")
+    p_search = sub.add_parser("parse-search", help="parse captured search results into a structured fragment")
     p_search.add_argument("--results-file", required=True)
+    p_search.add_argument("--kind", default="keyword_issue_search",
+                          choices=["keyword_issue_search", "keyword_pr_search"],
+                          help="which workflow signal this capture represents")
 
-    for p in (p_cmd, p_issue, p_search):
+    p_bundle = sub.add_parser("bundle", help="merge issue + timeline + search captures into ONE coherent DUPLICATE_WORK_EVIDENCE bundle (repository identity + capture timestamp + digest)")
+    p_bundle.add_argument("repo", nargs="?", default=".",
+                          help="repository working copy (provides repository identity)")
+    p_bundle.add_argument("--issue-file")
+    p_bundle.add_argument("--timeline-file", action="append", default=[])
+    p_bundle.add_argument("--search-file", action="append", default=[])
+    p_bundle.add_argument("--base-sha",
+                          help="session base SHA to bind the bundle to the "
+                               "current revision (recommended: git rev-parse HEAD)")
+    p_bundle.add_argument("--out", help="write the bundle JSON here")
+
+    for p in (p_cmd, p_issue, p_search, p_bundle):
         p.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -213,8 +358,32 @@ def main() -> int:
 
     if args.cmd == "parse-issue":
         report = parse_issue(Path(args.issue_file), [Path(t) for t in args.timeline_file])
-    else:
+    elif args.cmd == "parse-search":
         report = parse_search(Path(args.results_file))
+        report["type"] = "DUPLICATE_WORK_EVIDENCE_FRAGMENT"
+        report["signal"] = args.kind
+        report["captured_at"] = report.get("captured_at") or __import__(
+            "datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        report["digest"] = hashlib.sha256(json.dumps(
+            {k: v for k, v in report.items() if k != "digest"},
+            sort_keys=True).encode()).hexdigest()
+    elif args.cmd == "bundle":
+        repo = Path(args.repo).resolve()
+        issue_file = Path(args.issue_file) if args.issue_file else None
+        if args.issue_file and not issue_file.exists():
+            print("error: %s does not exist" % issue_file, file=sys.stderr)
+            return 3
+        bundle = build_bundle(repo, issue_file,
+                              [Path(x) for x in args.timeline_file],
+                              [Path(x) for x in args.search_file],
+                              base_sha=args.base_sha)
+        if args.out:
+            Path(args.out).write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n")
+            print("bundle written: %s (digest %s…, repository %s)"
+                  % (args.out, bundle["digest"][:12], bundle["repository_id"]))
+        else:
+            print(json.dumps(bundle, indent=2))
+        return 0
 
     if args.json:
         print(json.dumps(report, indent=2))
