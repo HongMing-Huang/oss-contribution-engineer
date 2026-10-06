@@ -157,6 +157,15 @@ every other ending is a distinct, honestly-named outcome. `closed=true` alone is
 success — a rejected PR is also closed. Classify from captured PR state with
 `scripts/upstream_state.py` (below), never from the agent's own impression.
 
+**This state machine is executable** (V5.2): `scripts/contribution_session.py`
+persists the session, mechanically refuses out-of-order or evidence-less
+transitions, and implements the review loop — `accept-review-change` re-enters
+PATCH with revalidation debt; `request-rereview` requires fresh validation plus a
+consumed REQUEST_REREVIEW grant plus a captured CHANGES_REQUESTED signal; upstream
+observation (UPSTREAM_OBSERVED) grants nothing. Invoke the runtime first; where it
+refuses, the refusal message names the missing evidence. Capability claims are
+classified in `CAPABILITIES.json` — every ENFORCED entry cites automated tests.
+
 Entry and exit gates — every transition must satisfy its criteria:
 
 | Transition | Gate (all required) |
@@ -438,7 +447,7 @@ ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/goal_compiler.py | Goal Contract + Goal Card; done_when observability gate; hypothesis records | none |
 | scripts/retrieval_router.py | hybrid retrieval (lexical/path/symbol/test/history/cognition/graph/repomap-PageRank), RRF fusion, abstention report; AOCI detection + alignment | none |
 | scripts/context_planner.py | Task Context Plan + bounded Context Pack of symbol spans with digests | none |
-| scripts/contribution_session.py | V5 runtime spine: persisted session state, mechanically gated transitions, authority grants, upstream classification, reconstruct | none |
+| scripts/contribution_session.py | V5/V5.2 runtime spine: persisted session state, mechanically gated transitions, action-scoped grants + receipts, typed-evidence gates, worktree-aware pre-patch, upstream substate lifecycle (accept-review-change / request-rereview), reconstruct | none |
 | scripts/budget_governor.py | govern loop: pack→audit→prune→repack→ACCEPT/BLOCKED with displaced_direct reporting | none |
 | scripts/cognition_receipt.py | Task Cognition Receipt: open/record-read/verify (drift detection)/close/reconstruct | none |
 | scripts/retrieval_eval.py | Recall@K, MRR, BCY@B, precision, line metrics; per-task-type + signal ablation; ROUTING REGRET diagnostic | none |

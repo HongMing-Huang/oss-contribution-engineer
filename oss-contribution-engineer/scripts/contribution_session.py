@@ -32,9 +32,12 @@ Exit codes: 0 ok, 1 gate refused / illegal, 2 usage, 3 missing session/input.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -56,6 +59,31 @@ CLASSIFICATIONS = {"AVAILABLE", "CLAIMED", "PR_EXISTS", "DESIGN_BLOCKED",
 
 REMOTE_ACTIONS = {"OPEN_ISSUE", "COMMENT_ISSUE", "PUSH_BRANCH", "OPEN_PR",
                   "UPDATE_PR", "REPLY_REVIEW", "REQUEST_REREVIEW"}
+
+# V5.2 upstream review substates (lifecycle, capable of loops). The main
+# contribution phase stays linear; the upstream phase is a substate on the session.
+UPSTREAM_SUBSTATES = {"NONE", "WAITING_FOR_REVIEW", "CHANGES_REQUESTED",
+                      "READY_FOR_REREVIEW", "MERGED", "CLOSED_NOT_MERGED",
+                      "SUPERSEDED", "WITHDRAWN", "DROPPED_OR_STALE"}
+
+
+def repository_identity(repo: Path) -> str:
+    """Deterministic repository identity: prefer the canonical origin slug
+    (owner/repo from the remote URL); fall back to a local fingerprint
+    ('local-' + first 12 hex of sha256(realpath)) for repositories without a
+    remote. Both forms are stable across filesystem moves for the remote case."""
+    p = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"],
+                       capture_output=True, text=True, shell=False)
+    if p.returncode == 0:
+        url = p.stdout.strip()
+        m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", url)
+        if m:
+            return m.group(1)
+    root = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+                          capture_output=True, text=True, shell=False)
+    fingerprint = hashlib.sha256(
+        str(Path(root.stdout.strip() or str(repo)).resolve()).encode()).hexdigest()[:12]
+    return "local-" + fingerprint
 
 # triage classifications that END the run without a patch (V2: no-patch is success)
 STOPPING = {"CLAIMED", "PR_EXISTS", "DESIGN_BLOCKED", "NEEDS_MAINTAINER_DECISION",
@@ -107,7 +135,12 @@ PROD_EXCLUDES_HINT = "production = non-test paths"
 
 
 def production_changes_since(repo: Path, base_sha: str) -> tuple[list[str], list[str]]:
-    """Return (production_paths, test_paths) changed between base_sha and HEAD.
+    """Return (production_paths, test_paths) changed between base_sha and the
+    ACTUAL worktree state — V5.2 hole G: base..HEAD commits alone miss staged,
+    unstaged and untracked production edits. Covered surfaces:
+      - committed changes   (git diff --name-only base..HEAD)
+      - staged + unstaged   (git diff --name-only HEAD)
+      - untracked files     (git ls-files --others --exclude-standard)
 
     Runtime bookkeeping (the evidence/session directory, the goal contract, and
     recorded workflow artifacts) is not product code and is excluded."""
@@ -116,6 +149,14 @@ def production_changes_since(repo: Path, base_sha: str) -> tuple[list[str], list
                        capture_output=True, text=True, shell=False)
     if p.returncode != 0:
         return [], []
+    committed = p.stdout.splitlines()
+    p = subprocess.run(["git", "-C", str(repo), "diff", "--name-only", "HEAD"],
+                       capture_output=True, text=True, shell=False)
+    working = p.stdout.splitlines() if p.returncode == 0 else []
+    p = subprocess.run(["git", "-C", str(repo), "ls-files", "--others",
+                        "--exclude-standard"],
+                       capture_output=True, text=True, shell=False)
+    untracked = p.stdout.splitlines() if p.returncode == 0 else []
     s = load_session(repo) if session_path(repo).exists() else {}
     bookkeeping = {".oss-contrib-evidence", ".github", ".git"}
     goal_path = (s.get("goal") or {}).get("path")
@@ -134,10 +175,12 @@ def production_changes_since(repo: Path, base_sha: str) -> tuple[list[str], list
     goal_rel = rel(goal_path) if goal_path else None
     artifact_rels = {rel(a) for a in artifact_paths if rel(a)}
     prod, tests = [], []
-    for f in p.stdout.splitlines():
+    seen = set()
+    for f in committed + working + untracked:
         f = f.strip()
-        if not f:
+        if not f or f in seen:
             continue
+        seen.add(f)
         first = f.split("/")[0]
         if first in bookkeeping or f.startswith(".oss-contrib-evidence/"):
             continue
@@ -191,10 +234,19 @@ def check_red(repo: Path, s: dict) -> list[str]:
                        "production state"
                        % ((reds[-1].get("git_head") or "?")[:12], base[:12]))
         return missing
-    # the regression test itself must be identified and linked
+    # the regression test itself must be identified and linked, AND carry
+    # test-file identity (V5.2 hole F: without it the RED proof cannot be
+    # bound to GREEN — the test used for RED is unprovable)
     if not any(e.get("regression_id") for e in bound):
         missing.append("RED binding: RED_REGRESSION witness lacks --regression-id "
                        "(needed to bind GREEN to the same test)")
+    if not any(e.get("test_identity") for e in bound):
+        # V5.2 hole F: without test-file identity the RED proof cannot be bound
+        # to GREEN — which test was used for RED is unprovable
+        missing.append("RED binding: RED_REGRESSION witness lacks --test-file "
+                       "identity (the GREEN proof must be bound to the same test; "
+                       "a regression proof without test identity is not strongly "
+                       "bound)")
     return missing
 
 
@@ -282,16 +334,47 @@ def check_validation_current(repo: Path, s: dict) -> list[str]:
         return missing
     report = build_report(entries, head=head)
     if report["summary"]["failed"]:
-        missing.append("validation: %d command(s) FAIL in the manifest"
-                       % report["summary"]["failed"])
+        # V5.2 (goal item 10): history vs current active evidence. A FAIL is
+        # superseded when a later PASS of the same evidence_type exists (the same
+        # validation requirement rerun); historical failures stay visible in the
+        # report but only ACTIVE failures block.
+        executions = [e for e in entries if e.get("kind") == "execution"]
+        active_fails = 0
+        for e in executions:
+            if e.get("status") != "FAIL":
+                continue
+            superseded = any(
+                later.get("status") == "PASS"
+                and later.get("evidence_type") == e.get("evidence_type")
+                and later.get("id", 0) > e.get("id", 0)
+                for later in executions)
+            if not superseded:
+                active_fails += 1
+        if active_fails:
+            missing.append("validation: %d command(s) FAIL with no later passing "
+                           "rerun of the same validation requirement" % active_fails)
     stale = report["summary"].get("stale", 0)
     if stale:
         missing.append("validation: %d head-bound record(s) are STALE for current HEAD"
                        % stale)
+    # V5.2 review loop: revalidation debt after an accepted review change
+    if s.get("review_revalidation_required"):
+        since = s.get("review_revalidation_since") or ""
+        fresh = [e for e in entries
+                 if e.get("kind") == "execution" and e.get("status") == "PASS"
+                 and e.get("head_bound") and e.get("timestamp", "") > since]
+        if not fresh:
+            missing.append("revalidation: review change accepted at %s — RED -> "
+                           "GREEN -> validation must be re-run and re-recorded "
+                           "before publication" % since[:19])
     if report["summary"]["not_executed"]:
         missing.append("validation: %d planned level(s) not executed — record "
                        "record-skip with a reason or run them"
                        % report["summary"]["not_executed"])
+    if s.get("review_revalidation_required") and not missing:
+        s["review_revalidation_required"] = False
+        s["history"].append({"at": now(), "event": "revalidation-complete"})
+        save_session(repo, s)
     return missing
 
 
@@ -331,15 +414,36 @@ def check_scope_audit(repo, s: dict) -> list[str]:
     sa = s.get("scope_audit") or {}
     if not sa.get("conclusion"):
         return ["scope audit: not recorded (run diff_scope_check.py --json and "
-                "'record --kind scope-audit --file <json> --conclusion ...)']"]
-    if sa.get("conclusion") not in ("WITHIN_SCOPE", "ACKNOWLEDGED"):
-        return ["scope audit: conclusion %s is unresolved — fix drift or explicitly "
-                "ACKNOWLEDGE with a reason" % sa["conclusion"]]
+                "'record --kind scope-audit --file <json> ...)']"]
     artifact = sa.get("artifact")
     if not artifact:
         return ["scope audit: no structured artifact recorded (the conclusion must "
                 "cite a SCOPE_AUDIT artifact)"]
-    return validate_artifact(Path(artifact), "SCOPE_AUDIT")
+    problems = validate_artifact(Path(artifact), "SCOPE_AUDIT")
+    if problems:
+        return problems
+    # V5.2: the ARTIFACT is authoritative for the machine finding. The recorded
+    # conclusion must agree with it (no relabelling); a human ACKNOWLEDGED
+    # decision is modelled separately, never overwriting the finding.
+    data = json.loads(Path(artifact).read_text())
+    if data.get("conclusion") != sa["conclusion"]:
+        return ["scope audit: recorded conclusion %r disagrees with the artifact's "
+                "authoritative conclusion %r — the machine finding cannot be "
+                "relabelled" % (sa["conclusion"], data.get("conclusion"))]
+    session_repo_id = s.get("repository_id") or repository_identity(repo)
+    if data.get("repository_id") != session_repo_id:
+        return ["scope audit: artifact belongs to repository %r, not this session (%r)"
+                % (data.get("repository_id"), session_repo_id)]
+    if sa["conclusion"] == "SCOPE_FINDINGS":
+        ack = sa.get("acknowledgement") or {}
+        if not ack.get("acknowledged"):
+            return ["scope audit: SCOPE_FINDINGS unresolved — fix the drift, or "
+                    "record the separate human decision with 'acknowledge-scope-finding "
+                    "--reason ... --by-user ...' (finding and acknowledgement are "
+                    "preserved separately)"]
+        if not ack.get("by_user"):
+            return ["scope audit: acknowledgement requires --by-user (human decision)"]
+    return []
 
 
 def check_understanding(repo, s: dict) -> list[str]:
@@ -456,10 +560,9 @@ def gate_requirements(state: str) -> dict:
                 ("upstream identity", lambda repo, s: [] if (s.get("upstream") or {}).get("pr_identity")
                  else ["upstream PR identity not captured (upstream --pr-json FILE)"]),
                 ("publication understanding", check_understanding_confirmed),
+                ("OPEN_PR receipt bound to this upstream", check_open_pr_receipt),
             ],
-            "authority": [("remote_action OPEN_PR",
-                           "publishing requires an action-scoped OPEN_PR grant "
-                           "(set-authority --grant remote --action OPEN_PR --target ...)")],
+            "authority": [],
         },
     }.get(state, {"checks": [], "authority": []})
 
@@ -481,7 +584,32 @@ def artifact_gate(repo, s, key, expected_type):
     if not files:
         return ["%s artifact not recorded (record --kind %s --file <script --json "
                 "output>)" % (key, key)]
-    return validate_artifact(Path(files[-1]), expected_type)
+    problems = validate_artifact(Path(files[-1]), expected_type)
+    if problems:
+        return problems
+    # V5.2 binding: integrity (digest) is not applicability. The artifact must
+    # belong to THIS session — repository identity and, for base-bound artifact
+    # types, the exact base revision.
+    data = json.loads(Path(files[-1]).read_text())
+    session_repo_id = s.get("repository_id") or repository_identity(repo)
+    if data.get("repository_id") != session_repo_id:
+        return ["artifact %s belongs to repository %r, not this session (%r) — "
+                "wrong-repository replay rejected"
+                % (files[-1], data.get("repository_id"), session_repo_id)]
+    if expected_type in ("REPOSITORY_RECON", "DUPLICATE_WORK_EVIDENCE"):
+        if data.get("base_sha") != s.get("base_sha"):
+            return ["artifact %s was generated at base %s but this session's base "
+                    "is %s — wrong-revision replay rejected; regenerate at the "
+                    "current base" % (files[-1], (data.get("base_sha") or "?")[:12],
+                                      (s.get("base_sha") or "?")[:12])]
+    if data.get("task_id") and data["task_id"] != s.get("task_id"):
+        return ["artifact %s belongs to task %r, not this session (%r)"
+                % (files[-1], data["task_id"], s.get("task_id"))]
+    if data.get("goal_digest") and data["goal_digest"] != (s.get("goal") or {}).get("digest"):
+        return ["artifact %s was produced under goal %s but this session's goal is "
+                "%s" % (files[-1], data["goal_digest"],
+                        (s.get("goal") or {}).get("digest"))]
+    return []
 
 
 def green_gate(repo, s):
@@ -500,6 +628,34 @@ def understanding_gate(repo, s):
     return check_understanding(repo, s)
 
 
+def check_open_pr_receipt(repo, s):
+    """V5.2 remote causality: IN_REVIEW requires a performed-action RECEIPT
+    (grant -> action -> resulting identity), not a bare grant. The receipt's
+    target repository must match the captured upstream identity (authorization
+    is bound to action AND target)."""
+    receipts = [r for r in s["authority"].get("receipts", [])
+                if r.get("action") == "OPEN_PR"]
+    if not receipts:
+        return ["no OPEN_PR action receipt — publishing requires an explicit "
+                "authorization (set-authority --grant remote --action OPEN_PR) "
+                "and the performed action must be receipted "
+                "(record-remote-action --grant-id ...)"]
+    identity = (s.get("upstream") or {}).get("pr_identity") or {}
+    upstream_repo = (identity.get("repo") or "").lower()
+    for r in reversed(receipts):  # latest receipt wins
+        target_repo = (r.get("target") or "").split("#")[0].lower()
+        if upstream_repo and target_repo and target_repo != upstream_repo:
+            return ["OPEN_PR receipt target %r does not match the captured "
+                    "upstream identity %r — authorization is bound to both the "
+                    "action and the target" % (r.get("target"), upstream_repo)]
+        if identity.get("number") is not None and r.get("resulting_identity") \
+                and not str(r["resulting_identity"]).endswith("#%s" % identity["number"]):
+            continue  # resulting number differs; check other receipts
+        return []
+    return ["OPEN_PR receipt does not cover the captured upstream PR "
+            "#%s" % identity.get("number")]
+
+
 # ------------------------------------------------------------------ commands
 
 def cmd_init(repo: Path, args) -> int:
@@ -510,35 +666,54 @@ def cmd_init(repo: Path, args) -> int:
     if args.goal:
         gp = Path(args.goal)
         goal_path = gp if gp.is_absolute() else (repo / gp).resolve()
-    digest = None
+    contract = None
     if goal_path and goal_path.exists():
-        contract = json.loads(goal_path.read_text())
-        digest = contract.get("digest")
-    if not digest:
-        print("error: --goal must point to an existing Goal Contract JSON "
+        # V5.2: verified loading — the digest is RECOMPUTED from the body, so a
+        # tampered contract with a retained digest field is rejected here.
+        from goal_compiler import load_contract  # reuse verified loader
+        try:
+            contract = load_contract(goal_path)
+        except json.JSONDecodeError as e:
+            print("error: goal contract is not valid JSON: %s" % e, file=sys.stderr)
+            return 2
+        except SystemExit:
+            print("error: goal contract digest verification failed", file=sys.stderr)
+            return 2
+    if not contract or not contract.get("digest"):
+        print("error: --goal must point to an existing verified Goal Contract JSON "
               "(goal_compiler.py compile)", file=sys.stderr)
         return 2
+    repo_id = repository_identity(repo)
+    if contract.get("repository") and repo_id != contract["repository"] \
+            and contract["repository"] != repo.name:
+        print("GATE REFUSED: goal contract was compiled for repository %s but this "
+              "session's repository identity is %s"
+              % (contract["repository"], repo_id), file=sys.stderr)
+        return 1
     session = {
-        "session_version": 1,
-        "task_id": args.task_id,
-        "repository": args.repository or repo.name,
+        "session_version": 2,
+        "task_id": args.task_id or contract.get("task_id") or "task",
+        "repository": repo_id,
+        "repository_id": repo_id,
         "base_sha": git_head(repo),
         "state": "DISCOVER",
-        "goal": {"digest": digest, "path": str(goal_path)},
+        "goal": {"digest": contract["digest"], "path": str(goal_path)},
         "authority": {"read": True, "worktree_edit": False,
-                      "grants": [], "actions": []},
+                      "grants": [], "actions": [], "receipts": []},
         "context": {"plan": None, "pack": None, "receipt": None},
         "artifacts": {},
         "classification": None,
+        "classification_evidence": None,
         "understanding": {"status": None, "confirmed_by": None},
         "scope_audit": {},
-        "upstream": {"observed": False},
+        "upstream": {"observed": False, "substate": "NONE"},
+        "review_revalidation_required": False,
         "blockers": [],
         "history": [{"at": now(), "event": "init", "state": "DISCOVER"}],
     }
     save_session(repo, session)
-    print("session initialized: %s (state DISCOVER, base %s)"
-          % (session_path(repo), (session["base_sha"] or "?")[:12]))
+    print("session initialized: %s (state DISCOVER, repo %s, base %s)"
+          % (session_path(repo), repo_id, (session["base_sha"] or "?")[:12]))
     return 0
 
 
@@ -664,6 +839,7 @@ def cmd_set_authority(repo: Path, args) -> int:
                   "(e.g. OWNER/REPO#123 or OWNER/REPO)", file=sys.stderr)
             return 2
         s["authority"]["actions"].append({
+            "grant_id": uuid.uuid4().hex[:12],
             "action": args.action, "target": args.target,
             "authorized_by": args.by_user, "evidence_ref": args.evidence_ref,
             "created_at": now(), "consumed_at": None,
@@ -691,13 +867,29 @@ def cmd_record(repo: Path, args) -> int:
               "patch-intent|plan|pack|receipt", file=sys.stderr)
         return 2
     if kind == "scope-audit":
-        if args.conclusion not in ("WITHIN_SCOPE", "ACKNOWLEDGED", "SCOPE_FINDINGS"):
-            print("error: --conclusion must be WITHIN_SCOPE|ACKNOWLEDGED|SCOPE_FINDINGS",
-                  file=sys.stderr)
-            return 2
         files = [f for f in (args.file or []) if Path(f).exists()]
-        s["scope_audit"] = {"conclusion": args.conclusion,
-                            "artifact": files[0] if files else None,
+        if not files:
+            print("error: scope-audit requires --file (the SCOPE_AUDIT artifact; "
+                  "an unsupported --conclusion claim is not evidence)", file=sys.stderr)
+            return 2
+        artifact_path = files[0]
+        problems = validate_artifact(Path(artifact_path), "SCOPE_AUDIT")
+        if problems:
+            for pr in problems:
+                print("error: %s" % pr, file=sys.stderr)
+            return 2
+        data = json.loads(Path(artifact_path).read_text())
+        derived = data.get("conclusion")
+        if args.conclusion and args.conclusion != derived:
+            # V5.2 (hole D): the artifact is authoritative; relabelling refused
+            print("GATE REFUSED: recorded conclusion %r disagrees with the "
+                  "artifact's authoritative conclusion %r — the machine finding "
+                  "cannot be relabelled; fix the drift or use "
+                  "'acknowledge-scope-finding' for the human decision"
+                  % (args.conclusion, derived), file=sys.stderr)
+            return 1
+        s["scope_audit"] = {"conclusion": derived,
+                            "artifact": artifact_path,
                             "reason": args.reason or "",
                             "at": now()}
     else:
@@ -726,9 +918,29 @@ def cmd_set_classification(repo: Path, args) -> int:
         print("error: classification must be one of %s" % sorted(CLASSIFICATIONS),
               file=sys.stderr)
         return 2
+    # V5.2: GOOD_CANDIDATE must cite the dedupe evidence bundle the judgment used
+    # (provenance, not judgment — the runtime still does not decide quality).
+    evidence_bundle = None
+    if args.classification == "GOOD_CANDIDATE":
+        bundles = (s.get("artifacts") or {}).get("dedupe") or []
+        if not bundles:
+            print("error: GOOD_CANDIDATE requires recorded dedupe evidence "
+                  "(record --kind dedupe --file <bundle>) — the classification "
+                  "must record which evidence the judgment was based on",
+                  file=sys.stderr)
+            return 1
+        evidence_bundle = bundles[-1]
     s["classification"] = args.classification
+    s["classification_evidence"] = {"bundle": evidence_bundle, "at": now()}
     s["history"].append({"at": now(), "event": "classification",
-                         "value": args.classification})
+                         "value": args.classification,
+                         "evidence_bundle": evidence_bundle})
+    save_session(repo, s)
+    print("classification: %s%s%s" % (
+        args.classification,
+        " (based on dedupe bundle %s)" % evidence_bundle if evidence_bundle else "",
+        " (stopping outcome — no patch expected)"
+        if args.classification in STOPPING else ""))
     save_session(repo, s)
     print("classification: %s%s" % (args.classification,
                                     " (stopping outcome — no patch expected)"
@@ -770,19 +982,158 @@ def cmd_upstream(repo: Path, args) -> int:
     except Exception as e:
         print("error: could not classify upstream state: %s" % e, file=sys.stderr)
         return 3
-    identity = {"repo": s.get("repository"), "number": (pr or {}).get("number")}
-    # V5.1: capturing an existing PR is UPSTREAM_OBSERVED — it proves publication
-    # happened previously and grants NOTHING. The next comment/push/PR update needs
-    # its own action-scoped grant (set-authority --grant remote --action ...).
+    identity = {"repo": s.get("repository_id") or s.get("repository"),
+                "number": (pr or {}).get("number")}
+    # V5.1/V5.2: capturing an existing PR is UPSTREAM_OBSERVED — it proves
+    # publication happened previously and grants NOTHING. Remote causality runs
+    # grant -> performed action receipt -> observation; never the reverse.
+    substate = outcome if outcome in UPSTREAM_SUBSTATES else "NONE"
     s["upstream"] = {"observed": True, "pr_identity": identity, "outcome": outcome,
-                     "source_file": str(p), "at": now()}
-    s["history"].append({"at": now(), "event": "upstream-observed", "outcome": outcome})
+                     "substate": substate, "source_file": str(p), "at": now()}
+    s["history"].append({"at": now(), "event": "upstream-observed", "outcome": outcome,
+                         "substate": substate})
     save_session(repo, s)
-    print("upstream OBSERVED: %s (pr #%s) — this grants no remote authorization"
-          % (outcome, identity["number"]))
+    print("upstream OBSERVED: %s (pr #%s, substate %s) — this grants no remote "
+          "authorization" % (outcome, identity["number"], substate))
     if outcome != "MERGED":
         print("NOTE: %s is NOT a merged contribution — never reported as success"
               % outcome)
+    return 0
+
+
+def cmd_record_remote_action(repo: Path, args) -> int:
+    """V5.2 remote causality: a performed remote action produces a RECEIPT bound
+    to a prior grant. Authorization that merely coexists with an already-observed
+    upstream object does not legitimize it — an OPEN_PR grant recorded after the
+    upstream capture is refused (authorization must precede observation)."""
+    s = load_session(repo)
+    grant = None
+    for g in s["authority"].get("actions", []):
+        if g.get("grant_id") == args.grant_id:
+            grant = g
+            break
+    if not grant:
+        print("error: no grant with id %s" % args.grant_id, file=sys.stderr)
+        return 2
+    if grant.get("consumed_at"):
+        print("error: grant %s already consumed at %s (one-shot grants)"
+              % (args.grant_id, grant["consumed_at"]), file=sys.stderr)
+        return 1
+    if grant["action"] == "OPEN_PR" and (s.get("upstream") or {}).get("observed"):
+        print("GATE REFUSED: upstream was already observed before this grant — a "
+              "post-hoc authorization cannot legitimize an already-observed remote "
+              "action", file=sys.stderr)
+        return 1
+    grant["consumed_at"] = now()
+    receipt = {
+        "grant_id": grant["grant_id"], "action": grant["action"],
+        "target": grant["target"], "performed_at": now(),
+        "resulting_identity": args.resulting or None,
+        "recorded_by": args.by_user,
+    }
+    s["authority"]["receipts"].append(receipt)
+    s["history"].append({"at": now(), "event": "remote-action",
+                         "action": grant["action"], "target": grant["target"]})
+    save_session(repo, s)
+    print("remote action receipt recorded: %s -> %s (grant %s)"
+          % (grant["action"], args.resulting or grant["target"], grant["grant_id"]))
+    return 0
+
+
+def cmd_accept_review_change(repo: Path, args) -> int:
+    """Review-driven revision loop: a captured CHANGES_REQUESTED substate with an
+    accepted change re-enters PATCH. Prior validation is invalidated (revalidation
+    debt) until RED -> GREEN -> validation run at the new state."""
+    s = load_session(repo)
+    if (s.get("upstream") or {}).get("substate") != "CHANGES_REQUESTED":
+        print("GATE REFUSED: accept-review-change requires the captured upstream "
+              "substate CHANGES_REQUESTED (run 'upstream --pr-json' on the captured "
+              "review state first)", file=sys.stderr)
+        return 1
+    if not s["authority"].get("worktree_edit"):
+        print("GATE REFUSED: re-entering PATCH requires worktree_edit authority",
+              file=sys.stderr)
+        return 1
+    if not args.reason:
+        print("error: --reason is required (what was accepted and why)", file=sys.stderr)
+        return 2
+    s["review_revalidation_required"] = True
+    s["review_revalidation_since"] = now()
+    s["state"] = "PATCH"
+    s["history"].append({"at": now(), "event": "accept-review-change",
+                         "reason": args.reason, "by_user": args.by_user,
+                         "reentered": "PATCH"})
+    save_session(repo, s)
+    print("review change accepted: re-entered PATCH; prior validation is "
+          "invalidated until RED -> GREEN -> validation complete")
+    return 0
+
+
+def cmd_acknowledge_scope_finding(repo: Path, args) -> int:
+    """V5.2: the human decision on SCOPE_FINDINGS is recorded SEPARATELY — the
+    machine finding is preserved, never overwritten by the acknowledgement."""
+    s = load_session(repo)
+    sa = s.get("scope_audit") or {}
+    if sa.get("conclusion") != "SCOPE_FINDINGS":
+        print("error: acknowledge-scope-finding requires a recorded SCOPE_FINDINGS "
+              "(there is nothing to acknowledge)", file=sys.stderr)
+        return 2
+    s["scope_audit"]["acknowledgement"] = {"acknowledged": True,
+                                           "by_user": args.by_user,
+                                           "reason": args.reason, "at": now()}
+    s["history"].append({"at": now(), "event": "scope-acknowledged",
+                         "by_user": args.by_user})
+    save_session(repo, s)
+    print("SCOPE_FINDINGS acknowledged by %s (finding preserved separately)"
+          % args.by_user)
+    return 0
+
+
+def cmd_request_rereview(repo: Path, args) -> int:
+    """READY_FOR_REREVIEW: requires a real CHANGES_REQUESTED upstream signal,
+    no revalidation debt (fresh validation), and an explicit REQUEST_REREVIEW
+    authorization (consumed here, receipt recorded)."""
+    s = load_session(repo)
+    if (s.get("upstream") or {}).get("substate") != "CHANGES_REQUESTED":
+        print("GATE REFUSED: request-rereview requires the captured upstream "
+              "substate CHANGES_REQUESTED — a rereview request without a real "
+              "review signal is an assertion, not evidence", file=sys.stderr)
+        return 1
+    # validation current is checked FIRST — a passing rerun clears the
+    # revalidation debt (check_validation_current persists the cleared flag)
+    missing = check_validation_current(repo, s)
+    if missing:
+        print("GATE REFUSED: validation is not current", file=sys.stderr)
+        for m in missing:
+            print("  - %s" % m, file=sys.stderr)
+        return 1
+    if s.get("review_revalidation_required"):
+        print("GATE REFUSED: revalidation debt outstanding — run RED -> GREEN -> "
+              "validation after the accepted review change first", file=sys.stderr)
+        return 1
+    grant = None
+    for g in s["authority"].get("actions", []):
+        if g.get("action") == "REQUEST_REREVIEW" and not g.get("consumed_at"):
+            grant = g
+            break
+    if not grant:
+        print("GATE REFUSED: an explicit REQUEST_REREVIEW authorization is "
+              "required (set-authority --grant remote --action REQUEST_REREVIEW "
+              "--target OWNER/REPO#N)", file=sys.stderr)
+        return 1
+    grant["consumed_at"] = now()
+    s["authority"]["receipts"].append({
+        "grant_id": grant["grant_id"], "action": "REQUEST_REREVIEW",
+        "target": grant["target"], "performed_at": now(),
+        "resulting_identity": grant["target"],
+        "recorded_by": grant.get("authorized_by", "unknown"),
+    })
+    s["upstream"]["substate"] = "READY_FOR_REREVIEW"
+    s["history"].append({"at": now(), "event": "request-rereview",
+                         "target": grant["target"]})
+    save_session(repo, s)
+    print("READY_FOR_REREVIEW: revalidation current; rereview request authorized "
+          "and receipted (grant %s)" % grant["grant_id"])
     return 0
 
 
@@ -845,6 +1196,26 @@ def main() -> int:
     p = sub.add_parser("upstream")
     p.add_argument("--pr-json", required=True)
     p.set_defaults(func=cmd_upstream)
+
+    p = sub.add_parser("acknowledge-scope-finding")
+    p.add_argument("--reason", required=True)
+    p.add_argument("--by-user", required=True)
+    p.set_defaults(func=cmd_acknowledge_scope_finding)
+
+    p = sub.add_parser("record-remote-action")
+    p.add_argument("--grant-id", required=True)
+    p.add_argument("--resulting", help="resulting upstream identity, e.g. OWNER/REPO#123")
+    p.add_argument("--by-user", required=True)
+    p.set_defaults(func=cmd_record_remote_action)
+
+    p = sub.add_parser("accept-review-change")
+    p.add_argument("--reason", required=True)
+    p.add_argument("--by-user", required=True,
+                   help="the human who accepted the review change")
+    p.set_defaults(func=cmd_accept_review_change)
+
+    p = sub.add_parser("request-rereview")
+    p.set_defaults(func=cmd_request_rereview)
 
     p = sub.add_parser("reconstruct")
     p.set_defaults(func=cmd_reconstruct)

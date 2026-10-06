@@ -1,5 +1,5 @@
 {
-  "ledger_version": 2,
+  "ledger_version": 3,
   "updated": "2026-10-06",
   "rule": "README and SKILL.md derive their claims from this file. ADVISORY must never be described as ENFORCED. Every ENFORCED entry cites automated tests (tests/<file>.py#<test-id>); a claim without executable evidence is downgraded.",
   "capabilities": {
@@ -7,7 +7,8 @@
       "status": "ENFORCED",
       "tests": [
         "tests/test_session_runtime.py#test_production_edit_before_red_blocks_patch",
-        "tests/test_black_box_lifecycle.py#test_production_edit_before_red_rejected"
+        "tests/test_session_runtime.py#test_wrong_repository_artifact_rejected",
+        "tests/test_black_box_lifecycle.py#test_skip_red_is_refused"
       ],
       "evidence": "scripts/contribution_session.py: linear gates, objective machine evidence only, illegal transitions exit 1"
     },
@@ -15,16 +16,16 @@
       "status": "ENFORCED",
       "tests": [
         "tests/test_session_runtime.py#test_action_scoped_grants",
-        "tests/test_black_box_lifecycle.py#test_happy_path_to_pr_ready_with_typed_evidence"
+        "tests/test_black_box_lifecycle.py#test_happy_path_to_pr_ready"
       ],
       "evidence": "session authority gates: PATCH requires granted worktree_edit; grants require --by-user + --evidence-ref"
     },
     "remote_write_control": {
       "status": "ENFORCED",
       "tests": [
-        "tests/test_session_runtime.py#test_action_scoped_grants",
         "tests/test_session_runtime.py#test_upstream_capture_grants_nothing",
-        "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization"
+        "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization",
+        "tests/test_v52_holes.py#test_e_remote_target_mismatch_rejected"
       ],
       "evidence": "no session-wide remote_write flag exists; remote actions are one-shot scoped grants (action/target/authorized_by/evidence_ref/created_at/consumed_at); upstream observation grants nothing"
     },
@@ -35,8 +36,7 @@
     "context_budget": {
       "status": "ENFORCED",
       "tests": [
-        "tests/test_black_box_lifecycle.py#test_budget_govern_cli",
-        "tests/test_black_box_lifecycle.py#test_govern_blocked_on_non_source_overflow"
+        "tests/test_black_box_lifecycle.py#test_budget_govern_cli"
       ],
       "evidence": "budget_governor govern (public CLI): bounded pack->audit->prune->repack->ACCEPT/BLOCKED; accounting recomputed from actual spans; pack_digest regenerated after pruning"
     },
@@ -59,16 +59,15 @@
     "evidence_witnessing": {
       "status": "ENFORCED",
       "tests": [
-        "tests/test_session_runtime.py#test_red_requires_typed_expected_fail_witness",
-        "tests/test_session_runtime.py#test_reproduction_requires_typed_evidence"
+        "tests/test_session_runtime.py#test_reproduction_requires_typed_evidence",
+        "tests/test_session_runtime.py#test_red_requires_typed_expected_fail_witness"
       ],
       "evidence": "results exist only via evidence_manifest record (exit-code witnessed, sha256 artifacts) or explicit record-skip with reason; gates read typed evidence, not purpose strings"
     },
     "stale_validation_blocking": {
       "status": "ENFORCED",
       "tests": [
-        "tests/test_session_runtime.py#test_stale_head_bound_green_blocks_validation",
-        "tests/test_session_runtime.py#test_changed_regression_test_invalidates_green"
+        "tests/test_session_runtime.py#test_stale_head_bound_green_blocks_then_recovers"
       ],
       "evidence": "head-bound records at another HEAD block CONTRIBUTOR_UNDERSTANDING and PR_READY; RED is bound to the pre-patch base SHA and production edits before PATCH are refused"
     },
@@ -76,16 +75,17 @@
       "status": "ENFORCED",
       "tests": [
         "tests/test_session_runtime.py#test_green_requires_matching_regression_id",
-        "tests/test_session_runtime.py#test_changed_regression_test_invalidates_green"
+        "tests/test_session_runtime.py#test_changed_regression_test_invalidates_green",
+        "tests/test_session_runtime.py#test_red_without_test_identity_rejected"
       ],
-      "evidence": "GREEN_REGRESSION must carry the RED proof's regression_id and matching test-file digests; a changed test invalidates the RED proof"
+      "evidence": "RED_REGRESSION requires regression_id AND test-file digests; GREEN must match both; a changed test invalidates the RED proof"
     },
     "structured_artifact_gates": {
       "status": "ENFORCED",
       "tests": [
-        "tests/test_session_runtime.py#test_empty_recon_artifact_rejected",
-        "tests/test_session_runtime.py#test_tampered_artifact_rejected",
-        "tests/test_session_runtime.py#test_wrong_type_artifact_rejected"
+        "tests/test_black_box_lifecycle.py#test_invalid_recon_and_dedupe_artifacts_rejected",
+        "tests/test_v52_holes.py#test_d_scope_conclusion_cannot_be_relabelled",
+        "tests/test_v52_holes.py#test_c_tampered_goal_contract_rejected_at_init"
       ],
       "evidence": "recon/dedupe/scope-audit artifacts must be typed, digest-bound JSON with full envelope; {} or tampered files are rejected"
     },
@@ -96,7 +96,8 @@
     "contributor_understanding": {
       "status": "IMPLEMENTED",
       "tests": [
-        "tests/test_session_runtime.py#test_in_review_requires_understood"
+        "tests/test_session_runtime.py#test_in_review_requires_understood",
+        "tests/test_black_box_lifecycle.py#test_deferred_cannot_reach_in_review"
       ],
       "evidence": "UNDERSTOOD requires --confirmed-by (human); DEFERRED/INCOMPLETE cannot reach IN_REVIEW. Whether the human truly understands remains human judgment"
     },
@@ -104,7 +105,7 @@
       "status": "IMPLEMENTED",
       "tests": [
         "tests/test_session_runtime.py#test_upstream_capture_grants_nothing",
-        "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization"
+        "tests/test_black_box_lifecycle.py#test_merged_is_success_closed_is_not"
       ],
       "evidence": "upstream_state classify(): MERGED is the only success; capture is marked UPSTREAM_OBSERVED and grants nothing"
     },
@@ -139,6 +140,84 @@
     "embedding_retrieval": {
       "status": "UNAVAILABLE",
       "evidence": "deliberate: no model dependency; pluggable arm documented, never filled to complete an ablation table"
+    },
+    "artifact_task_binding": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_wrong_repository_artifact_rejected",
+        "tests/test_session_runtime.py#test_wrong_base_artifact_rejected",
+        "tests/test_black_box_lifecycle.py#test_wrong_base_artifact_rejected"
+      ],
+      "evidence": "artifacts bound to session repository identity + base revision (+task/goal when present)"
+    },
+    "worktree_pre_patch_integrity": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_unstaged_production_edit_blocks_patch",
+        "tests/test_session_runtime.py#test_staged_production_edit_blocks_patch",
+        "tests/test_session_runtime.py#test_untracked_production_file_blocks_patch",
+        "tests/test_session_runtime.py#test_test_only_edits_before_patch_allowed"
+      ],
+      "evidence": "pre-patch covers committed+staged+unstaged+untracked production changes"
+    },
+    "remote_action_causality": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_black_box_lifecycle.py#test_captured_pr_grants_no_authorization",
+        "tests/test_session_runtime.py#test_in_review_receipt_target_mismatch_rejected",
+        "tests/test_session_runtime.py#test_in_review_accepts_matching_receipt"
+      ],
+      "evidence": "IN_REVIEW requires an OPEN_PR action receipt bound to a prior grant; target must match the captured upstream identity"
+    },
+    "artifact_integrity": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_verified_goal_contract_required_at_init",
+        "tests/test_black_box_lifecycle.py#test_tampered_goal_contract_rejected",
+        "tests/test_capability_claims.py#test_every_enforced_capability_has_test_evidence"
+      ],
+      "evidence": "goal contract verified at init via digest recomputation; artifact digests checked before applicability"
+    },
+    "dedupe_evidence_provenance": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_good_candidate_requires_dedupe_bundle",
+        "tests/test_session_runtime.py#test_classification_records_evidence_provenance"
+      ],
+      "evidence": "GOOD_CANDIDATE requires a recorded dedupe bundle; provenance persisted in classification_evidence"
+    },
+    "upstream_review_lifecycle": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_black_box_lifecycle.py#test_review_loop_reenters_patch_and_rereview",
+        "tests/test_black_box_lifecycle.py#test_merged_is_success_closed_is_not"
+      ],
+      "evidence": "CHANGES_REQUESTED -> accept-review-change -> PATCH with revalidation debt -> request-rereview (grant+receipt+fresh validation) -> READY_FOR_REREVIEW; terminal outcomes via classifier"
+    },
+    "pre_publication_state_machine": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_black_box_lifecycle.py#test_skip_red_is_refused",
+        "tests/test_session_runtime.py#test_active_fail_still_blocks_without_rerun"
+      ],
+      "evidence": "linear pre-publication gates (DISCOVER..PR_READY) mechanically refuse out-of-order or evidence-less transitions"
+    },
+    "red_green_test_identity": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_red_without_test_identity_rejected",
+        "tests/test_session_runtime.py#test_green_requires_matching_regression_id",
+        "tests/test_session_runtime.py#test_changed_regression_test_invalidates_green"
+      ],
+      "evidence": "RED without test identity refused; GREEN must match regression_id and test digests"
+    },
+    "validation_attempt_semantics": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_session_runtime.py#test_active_fail_still_blocks_without_rerun",
+        "tests/test_session_runtime.py#test_stale_head_bound_green_blocks_then_recovers"
+      ],
+      "evidence": "FAIL superseded only by a later same-type PASS; history stays visible; UNAVAILABLE never becomes PASS"
     }
   }
 }
