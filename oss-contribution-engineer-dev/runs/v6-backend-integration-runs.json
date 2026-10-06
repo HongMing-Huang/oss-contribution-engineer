@@ -1,0 +1,97 @@
+{
+  "report_type": "V6_BACKEND_INTEGRATION_RUNS",
+  "generated_at": "2026-10-06T15:45:45.305264+00:00",
+  "host_constraints": "stdlib-only runtime, no downloads permitted; the official aoci-code binary and Serena/LSP servers are not installed, so scenario 1 uses our contract-conformant conformance service and scenario 2 uses the stdlib python-ast semantic backend \u2014 both disclosed per-run, never impersonated",
+  "runs": [
+    {
+      "scenario": "aoci_runtime",
+      "repository": "/var/folders/6r/1091n5750q556h5jgw52s5vr0000gn/T/v6-integration-6xbqc9ry/real-repo",
+      "backend_selected": "aoci-contract-compatible:aoci-conformance",
+      "backend_disclosure": "conformance implementation of the AOCI runtime contract; the official aoci-code binary is not bundled in this environment (no-download rule)",
+      "identity": "89c4cc2bded3248e04348bd3905f006dfa4efd5270b9ca4716234ca5ca5fd876",
+      "generation": "1",
+      "scope": "all",
+      "mcp_service_version": "conformance 0.6.0",
+      "entry_count": 27,
+      "attestation": {
+        "challenge_passed": true,
+        "challenge_correct": 10,
+        "challenge_total": 10,
+        "truncation_detected": false,
+        "host_delivery_confirmation": true,
+        "answers_submitted": 10
+      },
+      "cognition_state": "COMPLETE",
+      "latency_ms_session": 81,
+      "fallback_behavior": "none \u2014 runtime used",
+      "query": "localize the evidence witnessing entry (aoci_search by keyword)",
+      "retrieved_objects": [
+        "scripts/evidence_manifest.py"
+      ],
+      "search_ok": true,
+      "search_identity_echoed": "89c4cc2bded3248e04348bd3905f006dfa4efd5270b9ca4716234ca5ca5fd876",
+      "source_verification": {
+        "path": "scripts/evidence_manifest.py",
+        "baseline_sha256": "a80f57456efbced8",
+        "current_sha256": "a80f57456efbced8",
+        "state": "current",
+        "matches_live_bytes": true
+      },
+      "latency_ms_total": 439
+    },
+    {
+      "scenario": "symbol_backend",
+      "repository": "/var/folders/6r/1091n5750q556h5jgw52s5vr0000gn/T/v6-integration-6xbqc9ry/real-repo",
+      "backend_selected": "python-ast",
+      "backend_selection_reason": "no LSP backend configured; stdlib ast backend is the default",
+      "counts": {
+        "definitions": 398,
+        "references": 15443
+      },
+      "fallback_behavior": "serena/LSP not configured in this environment; the stdlib python-ast semantic backend is the first real implementation, serena adapter present but dormant",
+      "query": {
+        "operation": "find_references+find_symbol",
+        "symbol": "cmd_advance"
+      },
+      "definitions": [
+        {
+          "path": "scripts/contribution_session.py",
+          "kind": "function",
+          "start_line": 799,
+          "end_line": 848
+        }
+      ],
+      "retrieved_spans": 4,
+      "reference_files": [
+        "scripts/contribution_session.py",
+        "tests/test_session_runtime.py",
+        "tests/test_v52_holes.py",
+        "tests/test_v53_closure.py"
+      ],
+      "source_verification": {
+        "scripts/contribution_session.py": "CURRENT",
+        "tests/test_session_runtime.py": "CURRENT",
+        "tests/test_v52_holes.py": "CURRENT",
+        "tests/test_v53_closure.py": "CURRENT"
+      },
+      "latency_ms_total": 316
+    },
+    {
+      "scenario": "fallback_no_backends",
+      "repository": "/var/folders/6r/1091n5750q556h5jgw52s5vr0000gn/T/v6-integration-6xbqc9ry/plain-repo",
+      "aoci_runtime_attempt": {
+        "runtime_attempted": false,
+        "runtime_used": false,
+        "reason": "no AOCI_MCP_COMMAND configured (env, config file, or --mcp-command)"
+      },
+      "backend_selected": "LIGHTWEIGHT_FALLBACK",
+      "backend_detail": "no persisted cognition; deterministic collection only",
+      "retrieved_objects": [
+        "app.py"
+      ],
+      "source_verification": "lexical routing reads live files only; no backend claims to verify",
+      "fallback_behavior": "explicit LIGHTWEIGHT_FALLBACK \u2014 no aoci volumes, no runtime session, no spans artifact; routing remains fully functional with zero backend pretense",
+      "latency_ms_total": 146
+    }
+  ]
+}

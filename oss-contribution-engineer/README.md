@@ -80,11 +80,17 @@ READY_FOR_REREVIEW. "PR opened" is not success, and `closed=true` is never repor
 a merge.
 
 **Large repositories**: context is acquired, never bulk-loaded — workflow-aware
-retrieval routing (lexical / symbol / test-relations / history / RepoMap-style
-PageRank / bounded graph expansion, fused per workflow) feeds a no-regret packer that
-lets structural candidates fill only the slots direct evidence leaves open. Every
-packed span carries provenance and a digest; routing regret is measured, and an
-extra signal is rejected when it makes the pack worse.
+retrieval routing (lexical / symbol / test-relations / history / lightweight
+structural PageRank over the import/test file graph / bounded graph expansion,
+fused per workflow) feeds a no-regret packer that lets structural candidates fill
+only the slots direct evidence leaves open. Two external intelligence backends plug
+into the same router with per-candidate provenance: an `AOCI_RUNTIME` client that
+consumes a real AOCI MCP runtime receipt (whole-index lifecycle, attestation,
+identity-drift gating, explicit fallback otherwise) and a symbol backend
+(`python-ast` first; Serena/LSP adapter when configured). Every packed span carries
+provenance and a digest; no backend is source truth — current source remains
+authoritative; routing regret is measured, and an extra signal is rejected when it
+makes the pack worse.
 
 ## The state machine
 

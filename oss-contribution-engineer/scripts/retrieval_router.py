@@ -132,12 +132,63 @@ def module_stem(path: str) -> str:
 
 # ---------------------------------------------------------------- cognition backend
 
+AOCI_SESSION_ARTIFACT = ".oss-contrib-evidence/aoci_runtime_session.json"
+SYMBOL_SPANS_ARTIFACT = ".oss-contrib-evidence/symbol_spans.json"
+
+
+def load_aoci_runtime_session(repo: Path) -> dict | None:
+    """A persisted AOCI_RUNTIME session receipt (written by aoci_runtime.py).
+
+    Consumed ONLY when the receipt proves a complete cognition pass; a session
+    that ended in explicit fallback or partial overview is NOT a runtime backend —
+    the router then falls through to AOCI_FILE / native / lightweight and says so.
+    """
+    p = repo / AOCI_SESSION_ARTIFACT
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict) or data.get("artifact_type") != "AOCI_RUNTIME_SESSION":
+        return None
+    if data.get("fallback") or data.get("cognition_state") != "COMPLETE":
+        return None
+    return data
+
+
+def load_symbol_spans(repo: Path) -> dict | None:
+    p = repo / SYMBOL_SPANS_ARTIFACT
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict) or data.get("artifact_type") != "SYMBOL_SPANS":
+        return None
+    return data
+
+
 def detect_backend(repo: Path) -> dict:
+    session = load_aoci_runtime_session(repo)
+    if session:
+        return {"kind": "AOCI_RUNTIME",
+                "identity": session.get("index_identity", ""),
+                "aligned_state": session.get("alignment_state", "unknown"),
+                "detail": "runtime session via %s %s @ generation %s (whole-index cognition %s)"
+                          % (session.get("mcp_server_info", {}).get("name", "?"),
+                             session.get("mcp_service_version", "?"),
+                             session.get("generation", "?"),
+                             session.get("cognition_state")),
+                "cognition_state": session.get("cognition_state"),
+                "generation": session.get("generation"),
+                "session_artifact": AOCI_SESSION_ARTIFACT}
     aoci = (repo / "aoci.code.txt").exists() or (repo / "aoci.txt").exists()
     mem = (repo / ".oss-contrib-evidence" / "goals").exists()
     if aoci:
         state, detail = aoci_alignment(repo)
-        return {"kind": "AOCI_FILE", "identity": "aoci volumes (file parser; no MCP runtime integration)", "aligned_state": state,
+        return {"kind": "AOCI_FILE", "identity": "aoci volumes (file parser; no runtime session found)", "aligned_state": state,
                 "detail": detail}
     if mem:
         return {"kind": "NATIVE_PROJECT_MEMORY", "identity": "goals/receipts", "aligned_state": "absent",
@@ -218,7 +269,24 @@ class Corpus:
         self.symbols: dict[str, list[tuple[str, int]]] = {}
         self.imports: dict[str, list[str]] = {}
         self.backend = detect_backend(repo)
-        self.cognition = parse_aoci_entries(repo) if self.backend["kind"] == "AOCI_FILE" else {}
+        if self.backend["kind"] == "AOCI_RUNTIME":
+            # runtime session snapshot is a MAP of cognition claims, same shape as
+            # the file parser's — ranking signal, never source truth
+            snap = self._runtime_entries(repo)
+            self.cognition = {
+                path: {"tags": e.get("tags", ""), "fields": e.get("fields", {}),
+                       "volume": "aoci-runtime"}
+                for path, e in snap.items()}
+        else:
+            self.cognition = parse_aoci_entries(repo) if self.backend["kind"] == "AOCI_FILE" else {}
+        self.spans = load_symbol_spans(repo)
+        self.span_defs: dict[str, list[dict]] = defaultdict(list)
+        self.span_refs: dict[str, list[dict]] = defaultdict(list)
+        if self.spans:
+            for d in self.spans.get("definitions", []):
+                self.span_defs[str(d.get("symbol", "")).lower()].append(d)
+            for r in self.spans.get("references", []):
+                self.span_refs[str(r.get("symbol", "")).lower()].append(r)
         for rel, text in walk(repo):
             self.files[rel] = text
             self.tokens[rel] = Counter(tokenize(text))
@@ -239,6 +307,14 @@ class Corpus:
                         break
             self.imports[rel] = imps
         self._bm25_stats()
+
+    def _runtime_entries(self, repo: Path) -> dict:
+        p = repo / AOCI_SESSION_ARTIFACT
+        try:
+            data = json.loads(p.read_text())
+            return data.get("entries_snapshot", {}) or {}
+        except (json.JSONDecodeError, OSError):
+            return {}
 
     def _bm25_stats(self):
         self.df: Counter = Counter()
@@ -383,6 +459,21 @@ def signal_rankings(corpus: "Corpus", query: str, args) -> dict[str, list[str]]:
             sym_scores[rel] = float(hit)
     symbol = sorted(sym_scores.items(), key=lambda kv: -kv[1])
 
+    # symbol_backend family: exact spans from a semantic backend (symbol_backend.py
+    # artifact). Provenance kept per candidate; spans are pointers, digests checked
+    # at evidence time — the backend is not source truth.
+    sb_scores: dict[str, float] = {}
+    if corpus.spans:
+        for q in qidents:
+            ql = q.lower()
+            for d in corpus.span_defs.get(ql, []):
+                if d["path"] in corpus.files:
+                    sb_scores[d["path"]] = sb_scores.get(d["path"], 0.0) + 2.0
+            for r in corpus.span_refs.get(ql, []):
+                if r["path"] in corpus.files:
+                    sb_scores[r["path"]] = sb_scores.get(r["path"], 0.0) + 1.0
+    symbol_backend = sorted(sb_scores.items(), key=lambda kv: -kv[1])
+
     test_scores = {}
     for rel in corpus.files:
         if is_test_path(rel):
@@ -413,10 +504,12 @@ def signal_rankings(corpus: "Corpus", query: str, args) -> dict[str, list[str]]:
             "symbol": [r for r, _ in symbol], "test": [r for r, _ in testrel],
             "history": [r for r, _ in history],
             "repomap": repomap,
+            "symbol_backend": [r for r, _ in symbol_backend],
             "cognition": list(corpus.cognition.keys()) if corpus.cognition else []}
 
 
-DIRECT_FAMILIES = {"lexical", "symbol", "test", "history", "cognition", "path"}
+DIRECT_FAMILIES = {"lexical", "symbol", "test", "history", "cognition", "path",
+                   "symbol_backend"}
 STRUCTURAL_FAMILIES = {"repomap", "graph"}
 
 # Workflow-aware routing: each policy decides WHICH families run, their RRF weights,
@@ -467,15 +560,16 @@ ROUTING_POLICIES = {
         "prior_source": "survey-shaped task: structural centrality may legitimately lead",
     },
     "issue2code": {
-        "signals": ["lexical", "symbol", "cognition", "history"],
-        "weights": {"lexical": 1.2, "symbol": 1.2, "cognition": 1.0},
+        "signals": ["lexical", "symbol", "symbol_backend", "cognition", "history"],
+        "weights": {"lexical": 1.2, "symbol": 1.2, "symbol_backend": 1.4, "cognition": 1.0},
         "structural": {"families": ["graph"], "max_share": 0.25},
         "structural_first": False,
-        "prior_source": "general localization mix; structure as capped support only",
+        "prior_source": "general localization mix; structure as capped support only; "
+                        "semantic symbol spans outrank lexical name scans when present",
     },
     "review": {
-        "signals": ["symbol", "history", "lexical"],
-        "weights": {"symbol": 1.2, "history": 1.0, "lexical": 1.0},
+        "signals": ["symbol", "symbol_backend", "history", "lexical"],
+        "weights": {"symbol": 1.2, "symbol_backend": 1.2, "history": 1.0, "lexical": 1.0},
         "structural": {"families": ["graph"], "max_share": 0.4},
         "structural_first": False,
         "prior_source": "review context = changed symbols + their history",
@@ -528,6 +622,39 @@ def build_evidence(path: str, rankings: dict[str, list[str]], corpus: Corpus,
                 names = {s.lower() for s, _ in corpus.symbols.get(path, [])}
                 exact = any(q.lower() in names for q in qidents)
                 item["match"] = "exact" if exact else "partial"
+            elif family == "symbol_backend":
+                backend = (corpus.spans or {}).get("backend", "unknown")
+                item["backend"] = backend
+                hit = None
+                for q in qidents:
+                    ql = q.lower()
+                    for d in corpus.span_defs.get(ql, []):
+                        if d["path"] == path and (hit is None or hit.get("weight", 0) < 2):
+                            hit = {"symbol": d["symbol"], "kind": d["kind"],
+                                   "line": d["start_line"], "relation": d["relation"],
+                                   "digest": d.get("source_digest", ""), "weight": 2}
+                    for r in corpus.span_refs.get(ql, []):
+                        if r["path"] == path and hit is None:
+                            hit = {"symbol": r["symbol"], "kind": r.get("kind"),
+                                   "line": r["start_line"], "relation": r["relation"],
+                                   "digest": r.get("source_digest", ""), "weight": 1}
+                if hit:
+                    item["match"] = "definition" if hit["weight"] >= 2 else "reference"
+                    item["symbol"] = hit["symbol"]
+                    item["line"] = hit["line"]
+                    item["relation"] = hit["relation"]
+                    src = corpus.repo / path
+                    if src.exists() and hit["digest"]:
+                        item["source_digest_state"] = (
+                            "CURRENT" if hashlib.sha256(src.read_bytes()).hexdigest()
+                            == hit["digest"] else "CHANGED")
+                    else:
+                        item["source_digest_state"] = "UNKNOWN"
+                item["note"] = ("spans come from a semantic backend; current source "
+                                "remains authoritative")
+            elif family == "cognition" and corpus.backend["kind"] == "AOCI_RUNTIME":
+                item["backend"] = "aoci-runtime@%s" % corpus.backend.get("generation", "?")
+                item["note"] = "runtime cognition claim (map, not source truth)"
             elif family == "graph":
                 item["relation"] = graph_via.get(path, "expanded")
                 item["distance"] = graph_depth.get(path)
@@ -545,6 +672,11 @@ def reason_phrase(evidence: list[dict]) -> str:
     for e in evidence:
         if e["family"] == "symbol":
             parts.append("%s symbol match" % e["match"])
+        elif e["family"] == "symbol_backend":
+            parts.append("%s via %s (%s@L%s)" % (e.get("match", "span"), e.get("backend"),
+                                                 e.get("symbol"), e.get("line")))
+        elif e["family"] == "cognition" and "backend" in e:
+            parts.append("cognition hit [%s]" % e["backend"])
         elif e["family"] == "graph":
             parts.append("direct dependency (distance %s)" % e.get("distance"))
         elif e["family"] == "repomap":
@@ -723,6 +855,18 @@ def route(repo_path: str, query: str, task_type: str, signals: list[str] | None,
             "is_test": is_test_path(path),
             "est_tokens": len(text) // 4,
         })
+    backends_used: dict = {"cognition": {"kind": corpus.backend["kind"],
+                                         "identity": corpus.backend.get("identity", ""),
+                                         "aligned_state": corpus.backend.get("aligned_state", "")}}
+    if corpus.spans:
+        backends_used["symbol_backend"] = {
+            "backend": corpus.spans.get("backend"),
+            "generated_at": corpus.spans.get("generated_at"),
+            "selection_reason": corpus.spans.get("backend_selection_reason"),
+            "serena_attempt": corpus.spans.get("serena_attempt"),
+            "definitions": (corpus.spans.get("counts") or {}).get("definitions"),
+            "references": (corpus.spans.get("counts") or {}).get("references"),
+        }
     return {
         "backend": corpus.backend,
         "task_type": task_type,
@@ -731,12 +875,14 @@ def route(repo_path: str, query: str, task_type: str, signals: list[str] | None,
         "routing_decision": routing_decision,
         "candidates": candidates,
         "abstention": abstention,
+        "backends": backends_used,
         "limits": ["history window: 200 commits", "max file bytes: %d" % MAX_FILE_BYTES,
                    "graph expansion: depth<=%d nodes<=%d (priority queue, distance penalty 0.5^depth)"
                    % (max_depth, max_nodes)],
         "provenance": {"families_run": list(rankings.keys()),
                        "files_scanned": len(corpus.files),
-                       "generated_by": "retrieval_router.py v2 (routing policies + no-regret guard)"},
+                       "backend_principle": "no backend is source truth; current source remains authoritative",
+                       "generated_by": "retrieval_router.py v3 (routing policies + external backends)"},
     }
 
 
@@ -746,7 +892,7 @@ def main() -> int:
     ap.add_argument("query")
     ap.add_argument("--task-type", default="issue2code",
                     choices=list(ROUTING_POLICIES))
-    ap.add_argument("--signals", help="comma subset: lexical,path,symbol,test,history,cognition,graph")
+    ap.add_argument("--signals", help="comma subset: lexical,path,symbol,symbol_backend,test,history,cognition,graph")
     ap.add_argument("--top-k", type=int, default=10)
     ap.add_argument("--max-depth", type=int, default=2)
     ap.add_argument("--max-nodes", type=int, default=50)
