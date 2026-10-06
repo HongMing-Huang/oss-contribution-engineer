@@ -111,6 +111,44 @@ done_when, constraints, authority, decisions, evidence, source identities, next 
 and the discard-list (superseded hypotheses, duplicate tool output, verbose output
 already represented by receipts).
 
+## 13. Task-local dynamic graph exploration — CoSIL (arXiv 2503.22424, ASE 2025)
+
+CoSIL localizes by building its graph *during* the search instead of pre-extracting one.
+Only the transferable ideas are recorded here; the implementation is not copied:
+
+- **Two-stage search**: breadth first over a module-level call graph to shortlist
+  candidate modules, then depth inside them — a cheap coarse filter before expensive
+  fine reads.
+- **Module-level breadth, function-level iterative depth**: granularity ramps up only
+  where evidence accumulates, not uniformly.
+- **Dynamic graph construction**: the exploring agent adds nodes/edges as it reads, so
+  the graph contains only what this task touched — no repo-wide parse, no stale index.
+- **Bounded iterations with an explicit exit signal**: expansion stops when gathered
+  context is judged *sufficient*, not when a loop budget runs out — the same
+  "every expansion must have a reason" rule as §1, inverted: every *stop* must have a
+  reason too.
+- **Pruning at each step**, plus reflection to keep findings output-aligned.
+
+Cited results: function-level Top-1 43%/44.6% with Qwen2.5-Coder-32B; best line recall
+among graph explorers in the SWE-Explore evaluation (§10). Documented weakness: an
+LLM-constructed graph has no ground-truth structure to be checked against, so a wrong
+edge is silent — which is exactly why V3 keeps "cognition selects, source proves".
+
+### Three-way comparison (input to V6 — combinable, not exclusive)
+
+| | AOCI | LocAgent | CoSIL |
+|---|---|---|---|
+| Cognition model | **persistent whole-system cognition** (in-repo, Git-versioned volumes) | **prebuilt heterogeneous structural graph** (directory/import/inheritance/invocation) | **task-local dynamic iterative graph exploration** |
+| When built | maintained continuously, aligned per commit | offline, per repo@commit | at runtime, per task |
+| Cost profile | expensive first build, then O(1) upkeep per changed file | graph build cost per commit, cheap queries after | zero pre-cost; exploration pays per hop |
+| Verification | SHA-bound entries, fail-closed CAS writes | agent reads located source; graph is structural ground truth | findings rest on read source; the constructed graph itself is unverified |
+| Fails when | prose entries plausibly wrong; absent for repos that never built one | graph stale vs. current HEAD; per-repo build cost | constructed edges wrong/incomplete; deep tasks exhaust the iteration budget |
+
+V6 design note: these three attack different failure modes, so the V6 design is
+explicitly allowed — and expected — to *combine* them: an AOCI-style persistent spine
+where one exists, LocAgent-style prebuilt structure for static recall, and CoSIL-style
+task-local dynamic expansion for the residual that neither static layer covers.
+
 ## What we deliberately do NOT adopt
 
 - Whole-repo packing (Repomix) — anti-pattern except tiny repos.
