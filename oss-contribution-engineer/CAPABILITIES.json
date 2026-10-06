@@ -226,7 +226,7 @@
       "tests": [
         "tests/test_v53_closure.py#test_rules_discovered_without_read_blocks_candidate",
         "tests/test_v53_closure.py#test_rules_read_receipt_unblocks_candidate",
-        "tests/test_v53_closure.py#test_changed_binding_doc_requires_reread"
+        "tests/test_v53_closure.py#test_changed_binding_doc_detected_on_fresh_read"
       ],
       "evidence": "CANDIDATE gate auto-discovers binding docs (AI instructions + governance docs) and requires a RULES_READ receipt whose covered digests match current files; changed docs force re-read"
     },
