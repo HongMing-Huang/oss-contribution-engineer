@@ -16,6 +16,8 @@ jobs:
         run: |
           cd oss-contribution-engineer/scripts
           for f in *.py; do python3 -m py_compile "$f"; done
+      - name: Install pytest
+        run: python3 -m pip install --quiet pytest
       - name: Run test suite (incl. capability-claim validation)
         run: |
           cd oss-contribution-engineer
