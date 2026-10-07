@@ -1,6 +1,6 @@
 {
-  "ledger_version": 6,
-  "updated": "2026-10-06 (V6 external backends)",
+  "ledger_version": 7,
+  "updated": "2026-10-06 (V7 deterministic cores)",
   "rule": "README and SKILL.md derive their claims from this file. ADVISORY must never be described as ENFORCED. Every ENFORCED entry cites automated tests (tests/<file>.py#<test-id>); a claim without executable evidence is downgraded.",
   "capabilities": {
     "state_machine": {
@@ -152,12 +152,31 @@
       "evidence": "lightweight structural PageRank: power iteration over import/test FILE-graph edges with query personalization. Naming correction (V6): this is NOT equivalent to Aider RepoMap, which ranks tree-sitter defs/refs identifier graphs (Aider-AI/aider repomap.py, REPO_VERIFIED); we reuse only the personalization idea"
     },
     "graph_calls_references_inheritance": {
-      "status": "IMPLEMENTED",
-      "evidence": "python-ast semantic backend (scripts/symbol_backend.py): Name/Attribute Load references and ClassDef.bases inheritance with exact spans + digests for Python files; non-Python languages honestly return nothing until an LSP backend (Serena adapter) is configured"
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_v7_graph_localization.py#test_graph_edges_follow_locagent_taxonomy",
+        "tests/test_v7_graph_localization.py#test_trace_is_bounded_and_follows_semantic_edges",
+        "tests/test_v7_graph_localization.py#test_router_expansion_follows_structural_edges"
+      ],
+      "evidence": "symbol_graph.json: LocAgent-style four-edge taxonomy (contains/imports/inherits/calls) over CPython ast, bounded distance-decayed trace, and file-level edge lifting into router expansion with relation labels. Honest limitation recorded in the artifact: call/inheritance targets are resolution=name-match (candidate edges), NOT full name resolution; imports use module-stem matching"
+    },
+    "two_stage_localization": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_v7_graph_localization.py#test_two_stage_sufficient_and_no_evidence_exits"
+      ],
+      "evidence": "localize_two_stage.py: CoSIL-inspired deterministic skeleton — stage 1 router breadth (direct-first shortlist), stage 2 symbol/graph iterative depth, explicit exit reasons (SUFFICIENT_EVIDENCE / BUDGET / NO_EVIDENCE); every localized function carries a source digest. NOT the CoSIL agent loop: no LLM, no relevance sub-agent, no dynamic graph construction"
+    },
+    "autocoderover_style_search_api": {
+      "status": "ENFORCED",
+      "tests": [
+        "tests/test_v7_graph_localization.py#test_search_api_exact_spans"
+      ],
+      "evidence": "symbol_backend search: closed bounded API (mode=class/method/code/method-in-class) with exact AST spans and digests, AutoCodeRover search_utils style; SBFL and the agent loop are NOT reproduced"
     },
     "external_backends_not_integrated": {
       "status": "IMPLEMENTED",
-      "evidence": "explicitly NOT integrated (grounding: oss-contribution-engineer-dev/v3/research/10-external-backend-grounding.md): LocAgent graph traversal (REPO_VERIFIED), RepoGraph plugin graph (REPO_VERIFIED), CoSIL iterative exploration (REPO_VERIFIED), Agentless hierarchical localization (REPO_VERIFIED), AutoCodeRover AST search + SBFL (REPO_VERIFIED), SWE-agent ACI runtime (REPO_VERIFIED; our state machine is interface-discipline inspired, not an ACI runtime), OpenHands condenser (PAPER_VERIFIED). None may be described as integrated"
+      "evidence": "status after V7 (grounding: oss-contribution-engineer-dev/v3/research/10-external-backend-grounding.md): LocAgent four-edge graph, RepoGraph artifact pattern, CoSIL two-stage skeleton, and AutoCodeRover search API now exist as MECHANISM_REPRODUCED deterministic cores (their agent loops / full name resolution / SBFL are NOT reproduced and must not be claimed). Still NOT integrated at any level: SWE-agent ACI runtime (our state machine is interface-discipline inspired only), OpenHands condenser (budget_governor is the local analog), Agentless hierarchical localization pipeline (funnel idea cited in research only)"
     },
     "embedding_retrieval": {
       "status": "UNAVAILABLE",

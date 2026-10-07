@@ -1,4 +1,4 @@
-# External Backend Grounding (V6 Phase 0)
+# External Backend Grounding (V6 Phase 0, extended V7)
 
 Verified 2026-10-06 against live upstream sources. Research levels:
 PAPER_VERIFIED < REPO_VERIFIED < IMPLEMENTATION_VERIFIED < MECHANISM_REPRODUCED < INTEGRATED.
@@ -7,8 +7,12 @@ A system is never labeled "researched" below without its implementation entry po
 Integration status summary: **AOCI runtime client = INTEGRATED** (against our
 contract-conformant service; official binary not bundled) · **symbol backend =
 INTEGRATED** (stdlib python-ast first implementation; Serena adapter present,
-dormant until configured) · everything else **NOT integrated** — the ledger
-(CAPABILITIES.json v6) records that absence explicitly.
+dormant until configured) · **V7 adds deterministic cores of four more systems**
+(see §V7 at the bottom: LocAgent four-edge graph, RepoGraph artifact pattern,
+CoSIL two-stage skeleton, AutoCodeRover search API — all MECHANISM_REPRODUCED
+over CPython ast, no downloads, no new parser) · SWE-agent ACI and OpenHands
+condenser remain **NOT integrated** (not applicable to this skill's shape); the
+ledger (CAPABILITIES.json) records every status explicitly.
 
 ## 1. AOCI (AOCI-CODE)
 
@@ -156,3 +160,28 @@ dormant until configured) · everything else **NOT integrated** — the ledger
 - `CAPABILITIES.json` v6 — renames `graph_pagerank_prior` evidence to
   "lightweight structural PageRank"; adds explicit NOT-integrated entries for
   LocAgent/RepoGraph/CoSIL/Agentless/AutoCodeRover/SWE-agent/OpenHands.
+
+## V7 extension (2026-10-06) — deterministic cores reproduced over the real backends
+
+The V6 goal gated these behind "only after this integration is real"; the
+integration is real, so V7 reproduced four mechanisms as deterministic cores.
+None of them required downloads, a new parser (CPython `ast` is stdlib), or a
+new retrieval algorithm — every stage composes the V6 backends.
+
+| Upstream | V7 deliverable | Level before → after | What is and is NOT claimed |
+|---|---|---|---|
+| LocAgent four-edge taxonomy | `symbol_backend.py graph/trace`: contains/imports/inherits/calls nodes+edges over CPython ast (the same parser LocAgent's build_graph.py uses), bounded distance-decayed traversal | REPO_VERIFIED → MECHANISM_REPRODUCED | call/inheritance targets are resolution=name-match (candidate edges); LocAgent's full name resolution is NOT reproduced |
+| RepoGraph artifact pattern | symbol_graph.json offline build, decoupled query sidecar (graph.pkl analog) | REPO_VERIFIED → MECHANISM_REPRODUCED | no tree-sitter, no exec() probing; build/query decoupling reproduced |
+| CoSIL two-stage localization | `localize_two_stage.py`: router breadth (stage 1) → symbol/graph iterative depth (stage 2) with explicit exit reasons (SUFFICIENT_EVIDENCE / BUDGET / NO_EVIDENCE) | REPO_VERIFIED → MECHANISM_REPRODUCED | deterministic skeleton only — no LLM loop, no relevance sub-agent, no dynamic graph construction |
+| AutoCodeRover search API | `symbol_backend.py search`: mode=class/method/code/method-in-class, bounded rows, exact AST spans | REPO_VERIFIED → MECHANISM_REPRODUCED | closed API surface reproduced; SBFL and the agent loop NOT reproduced |
+| SWE-agent ACI / OpenHands condenser | — | unchanged | remain NOT integrated (interface-compression ideas already embodied in evidence witnessing / budget governor; no ACI runtime, no condenser component exists here) |
+
+Router consumption: `retrieval_router.py` lifts graph calls/inherits/imports
+edges to file level and feeds them into bounded expansion with relation labels,
+so graph-reached candidates now carry "calls/inherits <file>" provenance.
+
+Real-run evidence: `oss-contribution-engineer-dev/runs/v6-backend-integration-runs.json`
+scenario `structural_graph_and_two_stage_localization` (448 nodes / 3199 edges
+over the skill's own source; trace cmd_advance bounded at BUDGET; two-stage
+localization SUFFICIENT_EVIDENCE → cmd_advance at scripts/contribution_session.py
+L799-848, digest-bound).

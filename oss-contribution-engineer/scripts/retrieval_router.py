@@ -287,6 +287,10 @@ class Corpus:
                 self.span_defs[str(d.get("symbol", "")).lower()].append(d)
             for r in self.spans.get("references", []):
                 self.span_refs[str(r.get("symbol", "")).lower()].append(r)
+        # structural graph (symbol_graph.json): calls/inherits edges lifted to
+        # file level so bounded expansion can follow real semantic relations.
+        # Built AFTER the file walk (adjacency is filtered against scanned files).
+        self.structural_adj: dict[str, list[tuple[str, str]]] = {}
         for rel, text in walk(repo):
             self.files[rel] = text
             self.tokens[rel] = Counter(tokenize(text))
@@ -306,6 +310,21 @@ class Corpus:
                         imps.append(m.group(1))
                         break
             self.imports[rel] = imps
+        gpath = repo / ".oss-contrib-evidence" / "symbol_graph.json"
+        if gpath.exists():
+            try:
+                g = json.loads(gpath.read_text())
+                if g.get("artifact_type") == "SYMBOL_GRAPH":
+                    def _file_of(node_id: str) -> str:
+                        return node_id.split(":", 1)[1].split("::", 1)[0]
+                    for e in g.get("edges", []):
+                        if e.get("kind") in ("calls", "inherits", "imports"):
+                            sf, tf = _file_of(e["src"]), _file_of(e["dst"])
+                            if sf != tf and sf in self.files and tf in self.files:
+                                self.structural_adj.setdefault(sf, []).append(
+                                    (tf, "%s %s" % (e["kind"], tf.rsplit("/", 1)[-1])))
+            except (json.JSONDecodeError, OSError):
+                pass
         self._bm25_stats()
 
     def _runtime_entries(self, repo: Path) -> dict:
@@ -711,6 +730,10 @@ def graph_expand(corpus: Corpus, seeds: list[tuple[str, float]], max_depth: int,
         stem = module_stem(path)
         for t in corpus.tests_of(path):
             neighbors.append(("tests %s" % stem, t))
+        # semantic structural edges from the symbol graph (calls/inherits/imports
+        # with relation labels) — provenance carried on the expansion itself
+        neighbors.extend((label, target)
+                         for target, label in corpus.structural_adj.get(path, []))
         for edge, n in neighbors:
             if n in seen:
                 continue

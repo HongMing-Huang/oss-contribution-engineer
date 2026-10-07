@@ -49,8 +49,11 @@ SKIP_DIRS = {
 }
 MAX_FILE_BYTES = 300_000
 ARTIFACT = ".oss-contrib-evidence/symbol_spans.json"
+GRAPH_ARTIFACT = ".oss-contrib-evidence/symbol_graph.json"
 
 OPS = ("find_symbol", "find_references", "symbol_span", "file_symbols")
+SEARCH_MAX_ROWS = 50
+TRACE_MAX_NODES = 60
 
 
 # ---------------------------------------------------------------- repository walk
@@ -154,6 +157,258 @@ def ast_find_references(repo: Path, name: str, path: str | None = None) -> list[
 def ast_symbol_span(repo: Path, path_str: str, name: str) -> list[dict]:
     rows, _ = ast_file_symbols(repo, path_str)
     return [r for r in rows if r["symbol"] == name]
+
+
+# ---------------------------------------------------------------- structural graph
+# LocAgent-style four-edge taxonomy (gersteinlab/LocAgent dependency_graph/
+# build_graph.py uses CPython ast — so do we) + the RepoGraph artifact pattern
+# (ozyyshr/RepoGraph construct_graph.py: offline build, decoupled query sidecar).
+# Honest limitation recorded per edge: call/inheritance targets are resolved by
+# simple name within the repo ("name-match"), not full name resolution.
+
+GRAPH_NODE_KINDS = ("file", "class", "function")
+
+
+def _file_of(node_id: str) -> str:
+    return node_id.split(":", 1)[1].split("::", 1)[0]
+
+
+def build_graph(repo: Path) -> dict:
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    by_name: dict[str, list[str]] = {}      # simple name -> def node ids
+    module_stem_files: dict[str, list[str]] = {}
+    parse_errors = []
+
+    py_files = sorted(iter_py_files(repo))
+    for p in py_files:
+        ps = p.relative_to(repo).as_posix()
+        stem = ps.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        module_stem_files.setdefault(stem, []).append(ps)
+        fid = "file:%s" % ps
+        digest = digest_of(p)
+        nodes.append({"id": fid, "kind": "file", "path": ps, "source_digest": digest})
+        tree, err = parse_file(p)
+        if tree is None:
+            parse_errors.append({"path": ps, "error": err})
+            continue
+        # imports → file:file edges (module stem match, same discipline as router)
+        for node in ast.walk(tree):
+            mods = []
+            if isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                mods = [node.module]
+            for mod in mods:
+                stem2 = mod.rsplit(".", 1)[-1]
+                for target in module_stem_files.get(stem2, []):
+                    if target != ps:
+                        edges.append({"src": fid, "dst": "file:%s" % target,
+                                      "kind": "imports", "resolution": "module-stem"})
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                cid = "class:%s::%s" % (ps, node.name)
+                nodes.append({"id": cid, "kind": "class", "path": ps,
+                              "name": node.name, "start_line": node.lineno,
+                              "end_line": node.end_lineno or node.lineno,
+                              "source_digest": digest})
+                edges.append({"src": fid, "dst": cid, "kind": "contains",
+                              "resolution": "exact"})
+                by_name.setdefault(node.name, []).append(cid)
+                for base in node.bases:
+                    bname = base.id if isinstance(base, ast.Name) else (
+                        base.attr if isinstance(base, ast.Attribute) else None)
+                    if bname:
+                        edges.append({"src": cid, "dst": "name:%s" % bname,
+                                      "kind": "inherits", "resolution": "name-match"})
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fid2 = "func:%s::%s" % (ps, node.name)
+                nodes.append({"id": fid2, "kind": "function", "path": ps,
+                              "name": node.name, "start_line": node.lineno,
+                              "end_line": node.end_lineno or node.lineno,
+                              "source_digest": digest})
+                edges.append({"src": fid, "dst": fid2, "kind": "contains",
+                              "resolution": "exact"})
+                by_name.setdefault(node.name, []).append(fid2)
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Call):
+                        callee = sub.func
+                        cname = callee.id if isinstance(callee, ast.Name) else (
+                            callee.attr if isinstance(callee, ast.Attribute) else None)
+                        if cname:
+                            edges.append({"src": fid2, "dst": "name:%s" % cname,
+                                          "kind": "calls", "resolution": "name-match"})
+
+    # resolve name: references to concrete def nodes (candidate edges — a call to
+    # a same-named local function and an unrelated same-named method both match;
+    # recorded as name-match, never presented as proven call resolution)
+    resolved, dangling = [], 0
+    for e in edges:
+        if e["dst"].startswith("name:"):
+            targets = by_name.get(e["dst"][5:], [])
+            if not targets:
+                dangling += 1
+                continue
+            for t in targets:
+                if t != e["src"]:
+                    e2 = dict(e)
+                    e2["dst"] = t
+                    resolved.append(e2)
+        else:
+            resolved.append(e)
+
+    # class→method contains edges (methods are functions defined in a class body)
+    for p in py_files:
+        ps = p.relative_to(repo).as_posix()
+        tree, _ = parse_file(p)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for child in node.body:
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        edges.append({"src": "class:%s::%s" % (ps, node.name),
+                                      "dst": "func:%s::%s" % (ps, child.name),
+                                      "kind": "contains", "resolution": "exact"})
+    counts: dict[str, int] = {}
+    for e in resolved:
+        counts[e["kind"]] = counts.get(e["kind"], 0) + 1
+    return {
+        "artifact_type": "SYMBOL_GRAPH",
+        "repository_root": str(repo),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "nodes": nodes,
+        "edges": resolved,
+        "counts": {"nodes": len(nodes), "edges": len(resolved),
+                   "by_kind": counts, "dangling_name_refs": dangling},
+        "parse_errors": parse_errors,
+        "resolution_notes": ["imports use resolution=module-stem",
+                             "calls/inheritance use resolution=name-match "
+                             "(candidate edges, not full name resolution)"],
+    }
+
+
+def load_graph(repo: Path) -> dict | None:
+    p = repo / GRAPH_ARTIFACT
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if data.get("artifact_type") == "SYMBOL_GRAPH" else None
+
+
+def trace(repo: Path, name: str, max_depth: int = 2, max_nodes: int = TRACE_MAX_NODES,
+          direction: str = "both") -> dict:
+    """Bounded priority traversal from matching definitions (LocAgent-style
+    multi-hop, distance-decayed). Explicitly bounded; never a whole-repo walk."""
+    graph = load_graph(repo) or build_graph(repo)
+    adj_out: dict[str, list[tuple[str, str]]] = {}
+    adj_in: dict[str, list[tuple[str, str]]] = {}
+    for e in graph["edges"]:
+        adj_out.setdefault(e["src"], []).append((e["dst"], e["kind"]))
+        adj_in.setdefault(e["dst"], []).append((e["src"], e["kind"]))
+    starts = [n["id"] for n in graph["nodes"] if n["kind"] in ("class", "function")
+              and n.get("name") == name]
+    if not starts:
+        return {"found": False, "query": name, "visited": [],
+                "exit_reason": "NO_SUCH_SYMBOL"}
+    import heapq
+    seen: set[str] = set(starts)
+    frontier = [(0.0, 0, s) for s in starts]
+    heapq.heapify(frontier)
+    visited = []
+    while frontier and len(visited) < max_nodes:
+        score, depth, nid = heapq.heappop(frontier)
+        visited.append({"node": nid, "depth": depth, "score": round(score, 4)})
+        if depth >= max_depth:
+            continue
+        neighbors = []
+        if direction in ("out", "both"):
+            neighbors.extend(adj_out.get(nid, []))
+        if direction in ("in", "both"):
+            neighbors.extend(adj_in.get(nid, []))
+        for dst, kind in neighbors:
+            if dst in seen:
+                continue
+            seen.add(dst)
+            heapq.heappush(frontier, (score + (0.5 ** (depth + 1)), depth + 1, dst))
+    return {"found": True, "query": name, "direction": direction,
+            "max_depth": max_depth, "max_nodes": max_nodes,
+            "visited": visited, "exit_reason": "BUDGET" if len(visited) >= max_nodes
+            else "FRONTIER_EMPTY"}
+
+
+# ---------------------------------------------------------------- search API
+# AutoCodeRover-inspired closed search surface (nus-apr/auto-code-rover
+# app/search/search_utils.py — per-file AST index + targeted search calls).
+
+def search_api(repo: Path, mode: str, name: str | None, cls: str | None,
+               pattern: str | None, path: str | None) -> dict:
+    rows: list[dict] = []
+    truncated = False
+    if mode == "code":
+        targets = [path] if path else sorted(
+            p.relative_to(repo).as_posix() for p in iter_py_files(repo))
+        pat = (pattern or "").lower()
+        if not pat:
+            return {"ok": False, "error": "--pattern required for mode=code"}
+        for ps in targets:
+            p = repo / ps
+            if not p.exists():
+                continue
+            digest = digest_of(p)
+            for i, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
+                if pat in line.lower():
+                    if len(rows) >= SEARCH_MAX_ROWS:
+                        truncated = True
+                        break
+                    rows.append({"path": ps, "symbol": None, "kind": "code_line",
+                                 "start_line": i, "end_line": i,
+                                 "source_digest": digest,
+                                 "relation": "contains", "backend": "python-ast",
+                                 "text": line.strip()[:160]})
+            if truncated:
+                break
+    else:
+        defs: list[dict] = []
+        targets = [path] if path else sorted(
+            p.relative_to(repo).as_posix() for p in iter_py_files(repo))
+        for ps in targets:
+            r, _ = ast_file_symbols(repo, ps)
+            defs.extend(r)
+        if mode == "method" and name:
+            rows = [d for d in defs if d["kind"] == "function" and d["symbol"] == name]
+        elif mode == "class" and name:
+            rows = [d for d in defs if d["kind"] == "class" and d["symbol"] == name]
+        elif mode == "method-in-class" and name and cls:
+            # exact span via the parse tree, not line heuristics
+            p = repo / (path or "")
+            cands = [ps for ps in (targets if not path else [path])]
+            for ps in cands:
+                pp = repo / ps
+                if not pp.exists():
+                    continue
+                tree, _ = parse_file(pp)
+                if tree is None:
+                    continue
+                digest = digest_of(pp)
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef) and node.name == cls:
+                        for child in node.body:
+                            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                                    and child.name == name:
+                                rows.append(_row(ps, child.name, "method",
+                                                 child.lineno,
+                                                 child.end_lineno or child.lineno,
+                                                 digest, "contains", "python-ast"))
+        else:
+            return {"ok": False, "error": "mode must be class|method|code|method-in-class "
+                    "with the matching --name/--class/--pattern"}
+        truncated = len(rows) > SEARCH_MAX_ROWS
+        rows = rows[:SEARCH_MAX_ROWS]
+    return {"ok": True, "mode": mode, "results": rows, "truncated": truncated}
 
 
 # ---------------------------------------------------------------- serena adapter
@@ -400,6 +655,25 @@ def main() -> int:
     p = sub.add_parser("query-index")
     p.add_argument("--repo", required=True); p.add_argument("--name", required=True)
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("graph")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("trace")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--name", required=True)
+    p.add_argument("--max-depth", type=int, default=2)
+    p.add_argument("--max-nodes", type=int, default=TRACE_MAX_NODES)
+    p.add_argument("--direction", default="both", choices=["in", "out", "both"])
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("search")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--mode", required=True,
+                   choices=["class", "method", "code", "method-in-class"])
+    p.add_argument("--name")
+    p.add_argument("--class-name", dest="class_name")
+    p.add_argument("--pattern")
+    p.add_argument("--path")
+    p.add_argument("--json", action="store_true")
 
     args = ap.parse_args()
     repo = Path(args.repo).resolve()
@@ -443,6 +717,32 @@ def main() -> int:
             rows = rows.get("results", [])
         print(json.dumps({"results": verify(repo, rows)}, indent=2))
         return 0
+
+    if args.cmd == "graph":
+        art = build_graph(repo)
+        out = repo / GRAPH_ARTIFACT
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(art, indent=2))
+        if args.json:
+            print(json.dumps({"ok": True, "artifact": str(out),
+                              "counts": art["counts"]}, indent=2))
+        else:
+            print("nodes: %d  edges: %d  by_kind: %s" % (
+                art["counts"]["nodes"], art["counts"]["edges"],
+                json.dumps(art["counts"]["by_kind"])))
+            print("artifact: %s" % out)
+        return 0
+
+    if args.cmd == "trace":
+        res = trace(repo, args.name, args.max_depth, args.max_nodes, args.direction)
+        print(json.dumps(res, indent=2))
+        return 0 if res["found"] else 4
+
+    if args.cmd == "search":
+        res = search_api(repo, args.mode, args.name, args.class_name,
+                         args.pattern, args.path)
+        print(json.dumps(res, indent=2))
+        return 0 if res["ok"] else 2
 
     op = {"find-symbol": "find_symbol", "find-references": "find_references",
           "symbol-span": "symbol_span", "file-symbols": "file_symbols"}[args.cmd]
