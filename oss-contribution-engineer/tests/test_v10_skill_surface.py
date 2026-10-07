@@ -46,6 +46,8 @@ def repo(tmp_path: Path) -> Path:
         "def alpha():\n    return base_value()\n\n\ndef base_value():\n    return 1\n")
     (r / "CONTRIBUTING.md").write_text("# Contributing\n\nAll patches need a test.\n")
     git(r, "init", "-q")
+    git(r, "config", "user.email", "t@t.co")
+    git(r, "config", "user.name", "t")
     git(r, "add", "-A")
     git(r, "commit", "-qm", "init")
     goal = py(str(GOAL), str(r), "compile", "--task-id", "v10",
