@@ -42,7 +42,7 @@
     },
     "retrieval_routing": {
       "status": "IMPLEMENTED",
-      "evidence": "ROUTING_POLICIES per workflow; --signals override recorded as ablation; priors validated via ROUTING REGRET, not assumed"
+      "evidence": "ROUTING_POLICIES per workflow; --signals override recorded as ablation; priors validated via ROUTING REGRET, not assumed. V8 profile-driven latency work on real repos (django 6956 files): tests_of full-rescan (88M regex searches ≈100s) replaced by precomputed test-file list + stem memo; PageRank edge totals hoisted out of the iteration loop — route 181s→35s with identical top-3 ranking (failure record F7, oss-contribution-engineer-dev/v8/EXPERIMENT-LEDGER.md); router_cache.py provides an opt-in warm-corpus path with byte-identical recall (arm W)"
     },
     "no_regret_packing": {
       "status": "IMPLEMENTED",

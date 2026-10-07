@@ -1,0 +1,1 @@
+{"steps": [{"op": "index_build", "defs": 0, "ms": 850}, {"op": "symbol_search", "ms": 7456}], "ops": 10, "files": [], "spans": [], "tests": [], "latency_ms": 8306, "index_ms": 850, "backend": "python-ast"}

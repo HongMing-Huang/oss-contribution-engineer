@@ -310,6 +310,11 @@ class Corpus:
                         imps.append(m.group(1))
                         break
             self.imports[rel] = imps
+        # V8 failure F7 (profiled, django 6956 files): tests_of() scanned ALL
+        # files with is_test_path() per call — 88M regex searches ≈ 100 s per
+        # route. Precompute test flags once; identical semantics, O(T) per call.
+        self.test_files = [rel for rel in self.files if is_test_path(rel)]
+        self._tests_cache: dict[str, list[str]] = {}
         gpath = repo / ".oss-contrib-evidence" / "symbol_graph.json"
         if gpath.exists():
             try:
@@ -369,15 +374,20 @@ class Corpus:
 
     def tests_of(self, prod: str) -> list[str]:
         stem = module_stem(prod)
-        out = []
-        for rel in self.files:
-            if not is_test_path(rel):
-                continue
-            if stem and stem in rel:
-                out.append(rel)
-            elif any(stem in (imp or "") for imp in self.imports.get(rel, [])):
-                out.append(rel)
-        return out
+        if not stem:
+            return []
+        # V8 F7 continuation (profiled): memoize per stem — graph expansion and
+        # ranking hit the same stems repeatedly on large repos.
+        cached = self._tests_cache.get(stem)
+        if cached is None:
+            cached = []
+            for rel in self.test_files:      # precomputed (see Corpus.__init__)
+                if stem in rel:
+                    cached.append(rel)
+                elif any(stem in (imp or "") for imp in self.imports.get(rel, [])):
+                    cached.append(rel)
+            self._tests_cache[stem] = cached
+        return cached
 
 
 def repomap_rank(corpus: "Corpus", qtokens: list[str], qidents: list[str],
@@ -432,6 +442,10 @@ def repomap_rank(corpus: "Corpus", qtokens: list[str], qidents: list[str],
 
     rank = {f: 1.0 / n for f in files}
     pers_total = sum(pers.values()) or 1.0
+    # V8 F7 continuation (profiled): edge totals were recomputed inside every
+    # iteration; edges are static across iterations — hoist once.
+    edge_items = [(src, list(dsts.items()), sum(dsts.values()))
+                  for src, dsts in edges.items() if dsts]
     for _ in range(iterations):
         dangling = sum(rank[f] for f in files if f not in edges or not edges[f])
         new = {}
@@ -439,12 +453,11 @@ def repomap_rank(corpus: "Corpus", qtokens: list[str], qidents: list[str],
             base = (1 - d) * (pers.get(f, 0.0) / pers_total if pers else 1.0 / n)
             base += d * dangling / n
             new[f] = base
-        for src, dsts in edges.items():
-            total = sum(dsts.values())
-            if not total or rank[src] == 0.0:
-                continue
+        for src, dst_list, total in edge_items:
             share = rank[src]
-            for dst, w in dsts.items():
+            if not total or share == 0.0:
+                continue
+            for dst, w in dst_list:
                 new[dst] += d * share * (w / total)
         rank = new
     return sorted(files, key=lambda f: -rank[f])
@@ -746,13 +759,21 @@ def graph_expand(corpus: Corpus, seeds: list[tuple[str, float]], max_depth: int,
     return extra
 
 
+# Corpus construction hook (V8 section 7): route() always built a cold Corpus.
+# router_cache.build_corpus is a drop-in replacement for warm-cache runs;
+# default stays the plain cold Corpus so behavior is unchanged unless an
+# operator (or the bench) opts in.
+CORPUS_BUILDER = None  # set to router_cache.build_corpus for warm-cache runs
+
+
 def route(repo_path: str, query: str, task_type: str, signals: list[str] | None,
           top_k: int, max_depth: int, max_nodes: int) -> dict:
     repo = Path(repo_path).resolve()
     if not repo.is_dir():
         print("error: %s is not a directory" % repo, file=sys.stderr)
         raise SystemExit(3)
-    corpus = Corpus(repo)
+    builder = CORPUS_BUILDER or Corpus
+    corpus = builder(repo)
     if not corpus.files:
         return {"backend": corpus.backend, "candidates": [], "abstention":
                 {"returned": False, "factors": {"reason": "no files scanned"}}, "limits": []}

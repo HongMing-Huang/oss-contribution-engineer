@@ -158,7 +158,11 @@ def production_changes_since(repo: Path, base_sha: str) -> tuple[list[str], list
                        capture_output=True, text=True, shell=False)
     untracked = p.stdout.splitlines() if p.returncode == 0 else []
     s = load_session(repo) if session_path(repo).exists() else {}
-    bookkeeping = {".oss-contrib-evidence", ".github", ".git"}
+    # V8 failure F3 (observed): security-hook state (.mimosa/hook-state/*.json)
+    # written into the worktree by tooling was flagged as untracked production
+    # changes, blocking legitimate PATCH transitions. Hook state is bookkeeping,
+    # not product code — same treatment as the evidence directory.
+    bookkeeping = {".oss-contrib-evidence", ".github", ".git", ".mimosa"}
     goal_path = (s.get("goal") or {}).get("path")
     artifact_paths = set()
     for files in (s.get("artifacts") or {}).values():

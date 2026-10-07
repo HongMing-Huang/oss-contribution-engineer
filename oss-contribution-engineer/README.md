@@ -106,6 +106,19 @@ Each transition has entry/exit gates (see `SKILL.md`). A gate failure is a succe
 outcome of the skill: INVALID, ALREADY_FIXED, DUPLICATE, UNCONFIRMED, DESIGN_QUESTION,
 TOO_LARGE — each is a conclusion with evidence, not a failure to produce a patch.
 
+## Project maturity (read this before any version number)
+
+Version numbers (V6, V7, V8, …) are **experimental iteration labels**, not maturity.
+Maturity is tracked on this ladder and the project currently sits at **EXPERIMENTAL**:
+
+    RESEARCH → EXPERIMENTAL → VALIDATED_ON_SAMPLE → REPEATEDLY_VALIDATED
+             → REAL-WORLD_TRIAL → USABLE
+
+V8 ran the pipeline against real repositories and frozen tasks with competent
+baselines and ablations; the results (including negative ones) live in
+`oss-contribution-engineer-dev/v8/EXPERIMENT-LEDGER.md`. Nothing in this README is
+a claim of usability, production-readiness, or feature-completeness.
+
 ## Runtime and capability status (V5)
 
 The state machine is no longer prose: `scripts/contribution_session.py` is the
