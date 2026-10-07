@@ -109,18 +109,24 @@ def test_two_stage_sufficient_and_no_evidence_exits(repo):
     res = out_json(LOC, "--repo", str(repo),
                    "--query", "where does Shape compute area scaling", "--json", ok=(0,))
     assert res["artifact_type"] == "LOCALIZATION_RESULT"
-    assert res["exit_reason"] == "SUFFICIENT_EVIDENCE"
+    # V9 §5: the exit name no longer implies correctness — it is a stopping
+    # decision plus an explicit evidence record
+    assert res["exit_reason"] == "STOPPED_EVIDENCE_FOUND"
     syms = {(f["path"], f["symbol"]) for f in res["functions"]}
     assert ("src/shape.py", "area") in syms
     assert ("src/shape.py", "Shape") in syms
     assert res["stage1"]["files"], "stage-1 shortlist recorded"
     assert res["stage2"]["iterations_used"] >= 1
     assert all(f["source_digest"] for f in res["functions"])
+    se = res["stop_evidence"]
+    assert se["question"] and se["direct_evidence"] and se["unresolved"]
+    assert se["why_stop"]
     miss = out_json(LOC, "--repo", str(repo),
                     "--query", "unrelated zanzibar quantumentropy", "--json", ok=(0,))
-    assert miss["exit_reason"] == "NO_EVIDENCE"
+    assert miss["exit_reason"] == "STOPPED_NO_EVIDENCE"
     assert miss["functions"] == []
     assert miss["stage2"]["visited"] == []
+    assert miss["stop_evidence"]["why_stop"]
 
 
 # ------------------------------------------------- 5. router consumes structural edges

@@ -137,7 +137,7 @@
         "tests/test_v6_backends.py#test_source_digest_drift_detected",
         "tests/test_v6_backends.py#test_fallback_when_external_backend_unavailable"
       ],
-      "evidence": "scripts/symbol_backend.py: find_symbol/find_references/symbol_span/file_symbols over CPython ast (exact lineno/end_lineno spans, Name/Attribute Load references, ClassDef.bases inheritance — no regex); every row carries path/symbol/kind/start_line/end_line/source_digest/relation/backend; verify() flags CURRENT/CHANGED/DELETED; Serena/LSP adapter activates only when SERENA_MCP_COMMAND is configured and falls back with a named reason"
+      "evidence": "scripts/symbol_backend.py: find_symbol/find_references/symbol_span/file_symbols over CPython ast; V9 ran the REAL serena-agent LSP on Go (gin) and TypeScript (vite) with resolved cross-file references (dev/v9/runs/serena-runs.jsonl) (exact lineno/end_lineno spans, Name/Attribute Load references, ClassDef.bases inheritance — no regex); every row carries path/symbol/kind/start_line/end_line/source_digest/relation/backend; verify() flags CURRENT/CHANGED/DELETED; Serena/LSP adapter activates only when SERENA_MCP_COMMAND is configured and falls back with a named reason"
     },
     "graph_imports": {
       "status": "IMPLEMENTED",
@@ -165,7 +165,7 @@
       "tests": [
         "tests/test_v7_graph_localization.py#test_two_stage_sufficient_and_no_evidence_exits"
       ],
-      "evidence": "localize_two_stage.py: CoSIL-inspired deterministic skeleton — stage 1 router breadth (direct-first shortlist), stage 2 symbol/graph iterative depth, explicit exit reasons (SUFFICIENT_EVIDENCE / BUDGET / NO_EVIDENCE); every localized function carries a source digest. NOT the CoSIL agent loop: no LLM, no relevance sub-agent, no dynamic graph construction"
+      "evidence": "localize_two_stage.py: stage 1 router breadth (direct-first shortlist), stage 2 definition matching inside the shortlist. V9: exits renamed to correctness-neutral STOPPED_EVIDENCE_FOUND/STOPPED_BUDGET/STOPPED_NO_EVIDENCE each carrying a structured stop_evidence record; the neighbor-hop expansion was REMOVED from the default path after the blind-task comparison showed zero exact-match benefit (D≡D1 task-for-task, dev/v9/runs/v9-r1.jsonl) — old behavior behind expand=True. NOT the CoSIL agent loop"
     },
     "autocoderover_style_search_api": {
       "status": "ENFORCED",

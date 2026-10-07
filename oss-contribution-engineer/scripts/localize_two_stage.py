@@ -67,7 +67,12 @@ def _defs_in(repo: Path, path: str) -> list[dict]:
 
 
 def stage2_depth(repo: Path, query: str, shortlist: list[str],
-                 max_iterations: int) -> dict:
+                 max_iterations: int, expand: bool = False) -> dict:
+    """V9 §5 simplification (evidence: on 10 blind tasks the neighbor-hop
+    expansion produced ZERO additional exact matches — D≡D1 identical in
+    runs/v9-r1.jsonl — only extra visited nodes): the default is now
+    definition matching inside the stage-1 shortlist ONLY. expand=True keeps
+    the old iterative behavior for the experiment record."""
     ids = [i.lower() for i in identifiers(query)]
     graph = sb.load_graph(repo)
     adj_out: dict[str, list[str]] = {}
@@ -82,6 +87,7 @@ def stage2_depth(repo: Path, query: str, shortlist: list[str],
     exact: list[dict] = []
     frontier_files = list(shortlist)
     seen_nodes: set[str] = set()
+    relations_covered: set[str] = set()
 
     for iteration in range(max_iterations):
         matched_this_iter = 0
@@ -112,14 +118,20 @@ def stage2_depth(repo: Path, query: str, shortlist: list[str],
         if exact:
             return {"visited": visited, "exact_matches": exact,
                     "iterations_used": iteration + 1,
-                    "exit_reason": "SUFFICIENT_EVIDENCE"}
+                    "exit_reason": "STOPPED_EVIDENCE_FOUND",
+                    "stop_evidence": _stop_evidence(
+                        query, exact, relations_covered, visited,
+                        "direct identifier matches located inside the "
+                        "stage-1 shortlist")}
         # expansion has a reason only if this iteration found partial leads or we
         # haven't looked at any neighborhood yet; expand 1 hop from visited nodes
-        if iteration + 1 < max_iterations and (matched_this_iter or iteration == 0):
+        if expand and iteration + 1 < max_iterations and \
+                (matched_this_iter or iteration == 0):
             for v in [x for x in visited if x["iteration"] == iteration]:
                 for nb in adj_out.get(v["node"], []) + adj_in.get(v["node"], []):
                     if nb.startswith("file:"):
                         f = nb[5:]
+                        relations_covered.add(v["node"] + " -> " + nb)
                         if f not in next_files and f not in shortlist:
                             next_files.append(f)
             frontier_files = next_files[:STAGE1_MAX_FILES]
@@ -129,15 +141,52 @@ def stage2_depth(repo: Path, query: str, shortlist: list[str],
             break
     return {"visited": visited, "exact_matches": [],
             "iterations_used": max_iterations,
-            "exit_reason": "NO_EVIDENCE" if not visited else "BUDGET"}
+            "exit_reason": "STOPPED_NO_EVIDENCE" if not visited
+            else "STOPPED_BUDGET",
+            "stop_evidence": _stop_evidence(
+                query, [], relations_covered, visited,
+                "budget/iteration limit reached without an exact identifier "
+                "match" if visited else
+                "no definitions in the shortlist matched the query identifiers")}
 
 
-def localize(repo: Path, query: str, task_type: str, max_iterations: int) -> dict:
+def _stop_evidence(query: str, exact: list[dict], relations_covered: set[str],
+                   visited: list[dict], why_stop: str) -> dict:
+    """V9 §5: an explicit, correctness-neutral stopping record. The old name
+    SUFFICIENT_EVIDENCE implied unproven correctness; STOPPED_EVIDENCE_FOUND is
+    a stopping decision plus the evidence that justified STOPPING — nothing
+    more."""
+    return {
+        "question": "which functions/classes does this query's identifier "
+                    "evidence point at, inside the stage-1 shortlist?",
+        "direct_evidence": [{"path": m["path"],
+                             "symbol": m.get("node", "").split("::")[-1],
+                             "line": m.get("start_line")} for m in exact],
+        "relations_covered": sorted(relations_covered)[:20],
+        "nodes_visited": len(visited),
+        "unresolved": ["semantic correctness of each match (name-match, not "
+                       "proven call resolution)",
+                       "whether the located code is where a maintainer would "
+                       "change behavior"],
+        "why_stop": why_stop,
+    }
+
+
+def localize(repo: Path, query: str, task_type: str, max_iterations: int,
+             stage1_result: dict | None = None,
+             expand: bool = False) -> dict:
+    """stage1_result: pass a previously computed stage-1 (V9 §3 task-scoped
+    snapshot reuse) to avoid a second router/Corpus build per localizer run.
+    expand=False: simplified stage-2 (shortlist definitions only, no hops)."""
     t0 = datetime.now(timezone.utc)
-    s1 = stage1_breadth(repo, query, task_type)
-    s2 = stage2_depth(repo, query, s1["files"], max_iterations) if s1["files"] else \
+    reused = stage1_result is not None
+    s1 = stage1_result or stage1_breadth(repo, query, task_type)
+    s2 = stage2_depth(repo, query, s1["files"], max_iterations, expand=expand) \
+        if s1["files"] else \
         {"visited": [], "exact_matches": [], "iterations_used": 0,
-         "exit_reason": "NO_EVIDENCE"}
+         "exit_reason": "STOPPED_NO_EVIDENCE",
+         "stop_evidence": _stop_evidence(query, [], set(), [],
+                                         "empty stage-1 shortlist")}
     result = {
         "artifact_type": "LOCALIZATION_RESULT",
         "repository_root": str(repo),
@@ -145,6 +194,8 @@ def localize(repo: Path, query: str, task_type: str, max_iterations: int) -> dic
         "task_type": task_type,
         "generated_at": t0.isoformat(),
         "stage1": s1,
+        "stage1_reused": reused,
+        "expand": expand,
         "stage2": s2,
         "functions": [{"path": m["path"], "symbol": m.get("node", "").split("::")[-1],
                        "kind": m["kind"], "start_line": m["start_line"],
@@ -153,6 +204,7 @@ def localize(repo: Path, query: str, task_type: str, max_iterations: int) -> dic
                        "relation": "definition", "backend": "python-ast+router"}
                       for m in s2["exact_matches"]],
         "exit_reason": s2["exit_reason"],
+        "stop_evidence": s2.get("stop_evidence"),
         "latency_ms": int((datetime.now(timezone.utc) - t0).total_seconds() * 1000),
     }
     out = repo / ARTIFACT
