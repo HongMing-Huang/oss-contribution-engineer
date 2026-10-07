@@ -157,16 +157,21 @@ def main() -> int:
 
     # ---- context pack + source verification ---------------------------------
     goal_path = str(goals[-1])
+    stage_pack: dict[str, int] = {}
+    t0 = datetime.now(timezone.utc).timestamp()
     r = run(["/usr/bin/env", "python3", str(SCRIPTS / "context_planner.py"),
              str(REPO), "plan", "--goal", goal_path,
              "--retrieval", str(REPO / ".oss-contrib-evidence" / "retrieval.json")])
+    stage_pack["context_plan_ms"] = int((datetime.now(timezone.utc).timestamp() - t0) * 1000)
     plan_p = REPO / ".oss-contrib-evidence" / "context-plan.json"
     step("context plan", r.returncode == 0, r.stderr[-120:])
     plan_p.write_text(r.stdout)
     anchors = ",".join(sorted({f["symbol"] for f in loc_res["functions"]})) or ""
+    t1 = datetime.now(timezone.utc).timestamp()
     r = run(["/usr/bin/env", "python3", str(SCRIPTS / "context_planner.py"),
              str(REPO), "pack", "--goal", goal_path,
              "--plan", str(plan_p), "--anchor-symbols", anchors])
+    stage_pack["context_pack_ms"] = int((datetime.now(timezone.utc).timestamp() - t1) * 1000)
     pack_p = REPO / ".oss-contrib-evidence" / "context-pack.json"
     step("context pack", r.returncode == 0, r.stderr[-120:])
     pack_p.write_text(r.stdout)
@@ -359,7 +364,7 @@ def main() -> int:
            "localized_target": target,
            "regression_id": "R-v9-click3805",
            "head": git("rev-parse", "HEAD"),
-           "stage_ms": snap.stage_ms,
+           "stage_ms": {**snap.stage_ms, **stage_pack},
            "log": LOG, "generated_at": datetime.now(timezone.utc).isoformat()}
     (HERE / "runs" / "contribution-path-v9.jsonl").open("a").write(
         _json.dumps(row) + "\n")

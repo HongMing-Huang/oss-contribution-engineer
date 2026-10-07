@@ -126,3 +126,30 @@ make the project useful.
 | symbol_index | 302 | 11257 | 11257 |
 | total | 606 | 55874 | 55874 |
 | two_stage | 2 | 2976 | 2976 |
+
+## V9 round 2 (D re-run with context_plan/context_pack timed — §3 seven-stage profile complete)
+
+All seven §3 stages now have independent timings: `v9_bench.py` arm D times the
+context_planner plan+pack calls, and the E2E contribution row carries
+`context_plan_ms`/`context_pack_ms` (38/40 ms on click-3805). Reading:
+**context packing is negligible** — the dominant stages remain route (p95 46 s,
+django PageRank) and the one-time snapshot builds (tokenize 9.1 s, graph 8.5 s
+at p95) which the task-scoped snapshot already amortizes. No persistence beyond
+the V9 snapshot is justified by this profile.
+
+| arm | n | file_recall | span_recall | span_prec | tok p50 | lat p50 | lat p95 | lat max |
+|---|---|---|---|---|---|---|---|---|
+| D | 10 | 0.767 | 0.138 | 0.005 | 1342 | 8776 | 106653 | 106653 |
+
+### D stage latencies (ms, p50/p95/max)
+
+| stage | p50 | p95 | max |
+|---|---|---|---|
+| context_pack | 52 | 116 | 116 |
+| context_plan | 44 | 130 | 130 |
+| graph_build | 129 | 8520 | 8520 |
+| route | 3780 | 46115 | 46115 |
+| scan_tokenize | 324 | 9067 | 9067 |
+| symbol_index | 107 | 5607 | 5607 |
+| total | 3893 | 46227 | 46227 |
+| two_stage | 1 | 2233 | 2233 |

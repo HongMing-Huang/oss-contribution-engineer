@@ -256,6 +256,29 @@ def arm_d(repo: Path, task: dict, snap: Snapshot, warm: bool = False,
                                        c["evidence_class"] == "direct"
                                        for c in report["candidates"])})
         stage["two_stage"] = int((time.monotonic() - t1) * 1000)
+        # §3 context-packing stage: plan + pack through the real planner CLI,
+        # timed separately (V9 verifier gap — packing had no stage timing)
+        ev_dir = repo / ".oss-contrib-evidence"
+        ev_dir.mkdir(parents=True, exist_ok=True)
+        goal_tmp = ev_dir / "bench_goal.json"
+        goal_tmp.write_text(json.dumps({"intent": task["query"],
+                                        "task_id": task["task_id"]}))
+        (ev_dir / "bench_retrieval.json").write_text(json.dumps(report))
+        anchors = ",".join(sorted({f["symbol"] for f in loc_res["functions"]}))
+        t2 = time.monotonic()
+        p1 = run(["/usr/bin/env", "python3", str(SKILL_SCRIPTS / "context_planner.py"),
+                  str(repo), "plan", "--goal", str(goal_tmp),
+                  "--retrieval", str(ev_dir / "bench_retrieval.json")],
+                 timeout=300)
+        stage["context_plan"] = int((time.monotonic() - t2) * 1000)
+        t3 = time.monotonic()
+        if p1.returncode == 0:
+            (ev_dir / "bench_plan.json").write_text(p1.stdout)
+            run(["/usr/bin/env", "python3", str(SKILL_SCRIPTS / "context_planner.py"),
+                 str(repo), "pack", "--goal", str(goal_tmp), "--plan",
+                 str(ev_dir / "bench_plan.json"), "--anchor-symbols", anchors],
+                timeout=300)
+        stage["context_pack"] = int((time.monotonic() - t3) * 1000)
     finally:
         if warm:
             rr.CORPUS_BUILDER = None
@@ -374,9 +397,9 @@ def main() -> int:
     return 0
 
 
-def run(cmd: list[str]):
+def run(cmd: list[str], **kw):
     import subprocess
-    return subprocess.run(cmd, capture_output=True, text=True, shell=False)
+    return subprocess.run(cmd, capture_output=True, text=True, shell=False, **kw)
 
 
 if __name__ == "__main__":
