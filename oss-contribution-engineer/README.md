@@ -119,7 +119,7 @@ baselines and ablations; the results (including negative ones) live in
 `oss-contribution-engineer-dev/v8/EXPERIMENT-LEDGER.md`. Nothing in this README is
 a claim of usability, production-readiness, or feature-completeness.
 
-## Runtime and capability status (V5)
+## Runtime and capability status
 
 The state machine is no longer prose: `scripts/contribution_session.py` is the
 executable spine. It composes the existing scripts, persists one session record

@@ -22,8 +22,38 @@ evidence behind it is a completed run — often the best possible run.
 
 ## Runtime (invoke this; do not re-derive the workflow from memory)
 
-`scripts/contribution_session.py` is the executable spine. It persists one session
-record (`.oss-contrib-evidence/session.json`), knows which evidence exists, and
+`scripts/contribution_session.py` is the executable spine AND the Agent-facing
+workflow. After `init`, drive the task through the production operations below —
+you should never need to call `retrieval_router.py`, `localize_two_stage.py`,
+`context_planner.py`, `budget_governor.py`, or `repository_intelligence.py`
+directly; those are implementation modules behind this surface.
+
+```bash
+S=python3 <skill-dir>/scripts/contribution_session.py
+
+$S <repo> investigate --task-text "<the task, verbatim>" [--task-type bug_report|stack_trace|review_comment|test_failure|edit_impact|explore|issue2code]
+    # prepares repository intelligence (backend selection is automatic and
+    # visible: AOCI runtime/file, Serena/LSP, python-ast, lexical — every
+    # fallback printed with its reason), routes, localizes, builds and
+    # digest-verifies the Context Pack, and persists the Investigation State
+$S <repo> read-source --path <file> --start N [--end M]
+    # shows the span with WHY / RELATION / BACKEND / SOURCE identity
+$S <repo> read-source --path <file> --start N --follow-question "what calls X?"
+    # the ONLY way to expand: one semantic relation answering one question
+$S <repo> note --kind known_facts|hypotheses|evidence|contradictions|unresolved|root-cause|rejected --text "…" [--next "…"]
+    # record investigation findings; the state survives restart/compaction
+$S <repo> explain-blocker     # what blocks the next transition + which op refreshes it
+$S <repo> refresh-context     # re-run investigate on the stored task text
+$S <repo> resume              # detect HEAD/rules/pack/validation/backend drift, list exact refreshes
+$S <repo> report              # project session evidence into walkthrough / root-cause /
+                              # code-neighborhood / validation-summary / risk /
+                              # understanding-prompts / issue-draft
+```
+
+A run ends in NO_PATCH (classification via `set-classification`) or PATCH_READY;
+both are first-class outcomes.
+
+It persists one session record (`.oss-contrib-evidence/session.json`), knows which evidence exists, and
 **refuses illegal operations with a non-zero exit** — you cannot advance the state
 machine, edit production code, or reach PR_READY without the machine evidence the
 gates require, and stale head-bound validation mechanically blocks advancement.

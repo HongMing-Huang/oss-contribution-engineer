@@ -111,6 +111,9 @@ def load_session(repo: Path) -> dict:
 def save_session(repo: Path, session: dict) -> None:
     p = session_path(repo)
     p.parent.mkdir(parents=True, exist_ok=True)
+    head = git_head(repo)
+    if head:
+        session["last_head"] = head   # resume compares drift against this
     p.write_text(json.dumps(session, indent=2, sort_keys=True) + "\n")
 
 
@@ -1217,6 +1220,446 @@ def cmd_reconstruct(repo: Path, args=None) -> int:
     return 0
 
 
+# ================================================================ V10 production
+# surface: one coherent workflow (prepare → locate → context → investigate →
+# read-source → … → report). Implementation modules (retrieval_router,
+# localize_two_stage, context_planner, repository_intelligence, …) are NOT part
+# of the Agent command surface.
+
+INVESTIGATION_FILE = "investigation.json"
+
+
+def _investigation_path(repo: Path) -> Path:
+    return repo / EVIDENCE_DIR / INVESTIGATION_FILE
+
+
+def _load_investigation(repo: Path) -> dict:
+    p = _investigation_path(repo)
+    if not p.exists():
+        return {"created_at": now(), "task_text": "", "task_type": "issue2code",
+                "known_facts": [], "hypotheses": [], "evidence": [],
+                "contradictions": [], "unresolved": [],
+                "candidate_root_causes": [], "candidate_files": [],
+                "rejected_hypotheses": [], "answered_questions": [],
+                "next_best_action": "", "context": {}, "updates": []}
+    return json.loads(p.read_text())
+
+
+def _save_investigation(repo: Path, st: dict) -> None:
+    st["updated_at"] = now()
+    p = _investigation_path(repo)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(st, indent=2) + "\n")
+
+
+def _ri():
+    import repository_intelligence
+    return repository_intelligence
+
+
+def cmd_investigate(repo: Path, args) -> int:
+    """prepare → route → localize → context pack → digest verification →
+    persist Investigation State + session context. The Agent never orchestrates
+    the implementation modules."""
+    s = load_session(repo)
+    ri = _ri()
+    prep = ri.prepare(repo, args.task_text, args.task_type)
+    loc_res = ri.locate(repo, args.task_text, args.task_type, prep)
+    anchors = ",".join(sorted({p["symbol"] for p in loc_res["provenance"]}))
+    ctx = ri.context(repo, loc_res, anchors)
+    if not ctx.get("ok"):
+        print("error: %s" % ctx.get("error"), file=sys.stderr)
+        return 3
+    st = _load_investigation(repo)
+    st["task_text"] = args.task_text
+    st["task_type"] = args.task_type
+    st["candidate_files"] = loc_res["candidate_files"]
+    st["candidate_root_causes"] = [
+        {"path": p["path"], "symbol": p["symbol"], "span": p["span"],
+         "digest_state": p["digest_state"]} for p in loc_res["provenance"]]
+    st["unresolved"] = loc_res["stop_evidence"]["unresolved"]
+    st["next_best_action"] = ("read-source the located spans (read-source), "
+                              "then record facts/contradictions via 'note'; "
+                              "expansion only via --follow-question")
+    st["context"] = {"pack_file": ctx["pack_file"],
+                     "pack_digest": ctx["pack_digest"],
+                     "provenance": ctx["provenance"],
+                     "backends": prep["backends"],
+                     "head": prep["head"],
+                     "stage_ms": prep["stage_ms"]}
+    _save_investigation(repo, st)
+    s["context"] = {"pack_file": ctx["pack_file"],
+                    "pack_digest": ctx["pack_digest"],
+                    "generated_at": now()}
+    s["investigation_file"] = str(_investigation_path(repo))
+    save_session(repo, s)
+    print("RESULT         INVESTIGATED")
+    print("backends used: %s" % ", ".join(prep["backends"]["selected"]))
+    for c in prep["backends"]["backends"]:
+        if c["status"] in ("skipped", "degraded"):
+            print("  fallback:    %-18s %-9s %s" % (c["backend"], c["status"],
+                                                    c.get("reason", c.get("detail", ""))[:80]))
+    for lim in prep["backends"]["limitations"]:
+        print("  limitation:  %s" % lim)
+    print("candidates:    %s" % ", ".join(loc_res["candidate_files"][:6]))
+    for p in loc_res["provenance"]:
+        print("  WHY %s::%s %s [%s] digest=%s" % (
+            p["path"], p["symbol"], p["span"], p["why"][:70], p["digest_state"]))
+    print("pack:          %s (digest %s)" % (ctx["pack_file"], ctx["pack_digest"]))
+    print("next action:   %s" % st["next_best_action"])
+    return 0
+
+
+NOTE_KINDS = ("known_facts", "hypotheses", "evidence", "contradictions",
+              "unresolved", "root_causes", "rejected")
+
+
+def cmd_note(repo: Path, args) -> int:
+    kind = args.kind if args.kind != "root-cause" else "root_causes"
+    if kind not in NOTE_KINDS:
+        print("error: --kind must be one of %s" % ", ".join(NOTE_KINDS),
+              file=sys.stderr)
+        return 2
+    st = _load_investigation(repo)
+    st.setdefault(kind, []).append({"text": args.text, "at": now()})
+    if args.next:
+        st["next_best_action"] = args.next
+    st["updates"] = (st.get("updates") or [])[-49:] + [now()]
+    _save_investigation(repo, st)
+    print("noted %s: %s" % (kind, args.text[:120]))
+    return 0
+
+
+def cmd_read_source(repo: Path, args) -> int:
+    """candidate span → current source + WHY/RELATION/BACKEND/SOURCE. Graph
+    expansion happens ONLY with --follow-question (it must answer something)."""
+    st = _load_investigation(repo)
+    import symbol_backend as sb  # lazy: implementation module behind the surface
+    p = repo / args.path
+    if not p.exists():
+        print("error: %s does not exist" % p, file=sys.stderr)
+        return 3
+    lines = p.read_text(errors="replace").splitlines()
+    a = max(1, args.start)
+    b = min(len(lines), args.end or args.start)
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+    head = git_head(repo) or "?"
+    prov = next((r for r in (st.get("context", {}).get("provenance") or [])
+                 if r.get("path") == args.path), None)
+    print("SOURCE  %s  HEAD %s  digest %s" % (args.path, head[:10], digest[:16]))
+    print("WHY     %s" % ((prov or {}).get("why", "not in context pack — "
+                                                  "investigation read")))
+    print("BACKEND %s" % ((prov or {}).get("backend", "investigation")))
+    print("RELATION %s" % ((prov or {}).get("relation", "—")))
+    # surrounding invariant: enclosing definitions from the symbol backend
+    defs, _ = sb.ast_file_symbols(repo, args.path) if args.path.endswith(".py") else ([], None)
+    enclosing = [d for d in defs if d["start_line"] <= a <= (d["end_line"] or 0) + 1]
+    if enclosing:
+        d = enclosing[-1]
+        print("INSIDE  %s %s (L%d-%s)" % (d["kind"], d["symbol"],
+                                          d["start_line"], d["end_line"]))
+    print()
+    for i in range(a, b + 1):
+        print("%5d  %s" % (i, lines[i - 1]))
+    if not args.follow_question:
+        print("\nno expansion — pass --follow-question \"…\" to follow one "
+              "semantic relation that answers a specific question")
+        return 0
+    # question-gated expansion: follow ONE relation from this file's nodes
+    # (symbol nodes count — a callee in the same file is a valid answer)
+    graph = sb.load_graph(repo) or sb.build_graph(repo)
+    node_by_id = {n["id"]: n for n in graph["nodes"]}
+    adj: dict[str, list[tuple[str, str]]] = {}
+    for e in graph["edges"]:
+        adj.setdefault(e["src"], []).append((e["dst"], "%s %s" % (e["kind"], e["dst"])))
+        adj.setdefault(e["dst"], []).append((e["src"], "%s %s" % (e["kind"], e["src"])))
+    q = args.follow_question.lower()
+    want_kind = ("call" if "call" in q else
+                 "inherit" if any(w in q for w in ("inherit", "subclass", "base"))
+                 else "import" if "import" in q else None)
+    followed = None
+    for node in [n for n in adj if args.path in n]:
+        for dst, label in adj[node]:
+            if want_kind and not label.startswith(want_kind):
+                continue
+            followed = (node, dst, label)
+            break
+        if followed:
+            break
+    if not followed:
+        print("\nexpansion refused: no %s relation from this file answers the "
+              "question" % (want_kind or "semantic"))
+        return 4
+    node, dst, label = followed
+    print("\nEXPANSION (question: %s)\n  %s → %s" % (args.follow_question, node, label))
+    if dst.startswith("file:"):
+        rel_file = dst.split(":", 1)[1]
+        nrows, _ = sb.ast_file_symbols(repo, rel_file)
+        for d in nrows[:8]:
+            print("  %s::%s L%s-%s" % (rel_file, d["symbol"], d["start_line"],
+                                       d["end_line"]))
+        followed_target = rel_file
+    else:
+        n = node_by_id.get(dst, {})
+        followed_target = n.get("path", dst)
+        print("  %s::%s L%s-%s (digest-bound node)" % (
+            n.get("path"), n.get("name"), n.get("start_line"), n.get("end_line")))
+    st.setdefault("answered_questions", []).append({
+        "question": args.follow_question, "relation": label,
+        "answered_by": followed_target, "at": now()})
+    st.setdefault("evidence", []).append({
+        "text": "followed %s to answer: %s" % (label, args.follow_question),
+        "at": now()})
+    _save_investigation(repo, st)
+    return 0
+
+
+def cmd_refresh_context(repo: Path, args) -> int:
+    st = _load_investigation(repo)
+    if not st.get("task_text"):
+        print("error: no investigation to refresh — run investigate first",
+              file=sys.stderr)
+        return 3
+    args.task_text = st["task_text"]
+    args.task_type = st.get("task_type", "issue2code")
+    return cmd_investigate(repo, args)   # same pipeline; state text preserved
+
+
+def cmd_explain_blocker(repo: Path, args) -> int:
+    s = load_session(repo)
+    state = s.get("state", "DISCOVER")
+    idx = STATES.index(state)
+    nxt = STATES[idx + 1] if idx + 1 < len(STATES) else None
+    if not nxt:
+        print("state %s is terminal-adjacent; no next transition" % state)
+        return 0
+    reqs = gate_requirements(nxt)
+    gaps = []
+    for name, check in reqs.get("checks", []):
+        gaps += [(nxt, name, g) for g in (check(repo, s) or [])]
+    for grant in reqs.get("authority", []):
+        have = any(g.get("grant") == grant and not g.get("consumed_at")
+                   for g in s.get("authority_grants", []))
+        if not have:
+            gaps.append((nxt, "authority", "requires %s granted via set-authority"
+                         % grant))
+    print("next transition: %s → %s" % (state, nxt))
+    if not gaps:
+        print("no blockers recorded — advance should succeed")
+        return 0
+    for st_, name, g in gaps:
+        print("BLOCKED  [%s] %s: %s" % (st_, name, g))
+        if "rules" in name:
+            print("  refresh: read the binding docs fully (rules read receipt), "
+                  "then re-record")
+        elif "context" in name or "pack" in name:
+            print("  refresh: session refresh-context")
+        elif "evidence" in name or "validation" in name:
+            print("  refresh: record fresh evidence (record) / re-run validation")
+        elif "authority" in name:
+            print("  refresh: set-authority --grant … --by-user … --evidence-ref …")
+        else:
+            print("  refresh: see SKILL workflow for %s" % name)
+    return 0
+
+
+def cmd_resume(repo: Path, args) -> int:
+    """Detect everything that went stale since the last touch and say exactly
+    what must be refreshed."""
+    s = load_session(repo)
+    ri = _ri()
+    st = _load_investigation(repo)
+    head = git_head(repo)
+    stale = []
+    # compare against the LAST SEEN head (updated by every production op), not
+    # the base: after a legitimate patch commit HEAD is SUPPOSED to differ from
+    # base — that is progress, not drift.
+    last_seen = s.get("last_head") or s.get("base_sha")
+    if head and last_seen and head != last_seen:
+        stale.append("repository HEAD changed since the last session op "
+                     "(%s → %s): re-check the diff and refresh-context before "
+                     "trusting stored spans" % (last_seen[:10], head[:10]))
+    # rules drift
+    try:
+        from contribution_rules_scan import binding_manifest as _bm
+        man = _bm(repo, max_depth=4)
+        rrj = (s.get("artifacts") or {}).get("rules_read") or []
+        for rp in rrj:
+            p = Path(rp)
+            if p.exists():
+                recv = json.loads(p.read_text())
+                covered = {c["path"]: c["digest"] for c in recv.get("covered", [])}
+                for d in man.get("binding", []):
+                    if covered.get(d["path"]) and covered[d["path"]] != d["digest"]:
+                        stale.append("rules changed: %s — re-read and re-record "
+                                     "the rules receipt" % d["path"])
+    except SystemExit:
+        pass
+    # context pack digest
+    ctx = s.get("context") or {}
+    pf = ctx.get("pack_file")
+    if pf and Path(pf).exists():
+        cur = hashlib.sha256(Path(pf).read_text().encode()).hexdigest()[:16]
+        if cur != ctx.get("pack_digest"):
+            stale.append("context pack changed on disk (%s) — session "
+                         "refresh-context" % ctx.get("pack_digest"))
+    # validation staleness
+    gaps = check_validation_current(repo, s)
+    stale += ["validation: %s" % g for g in gaps]
+    # AOCI identity / availability
+    ri_status = ri.status(repo)
+    if ctx.get("backends"):
+        old_sel = set(ctx["backends"].get("selected", []))
+        new_sel = set(ri_status["backends"]["selected"])
+        diff = sorted(old_sel ^ new_sel)
+        if diff:
+            stale.append("backend availability changed: %s — session "
+                         "refresh-context" % ", ".join(diff))
+    if not stale:
+        print("RESUME OK — nothing stale (HEAD %s)" % (head or "?")[:10])
+        return 0
+    print("RESUME — %d thing(s) stale:" % len(stale))
+    for x in stale:
+        print("  • %s" % x)
+    return 1
+
+
+def cmd_report(repo: Path, args) -> int:
+    """First-class contribution outputs, projected from session evidence — the
+    Agent never re-writes the same facts into markdown templates by hand."""
+    s = load_session(repo)
+    st = _load_investigation(repo)
+    out_dir = repo / EVIDENCE_DIR / "report"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    import evidence_manifest
+    import validation_report
+    try:
+        entries = evidence_manifest.load_entries(repo)
+    except (Exception, SystemExit):
+        entries = []
+    if entries:
+        report = validation_report.build_report(entries, git_head(repo))
+    else:
+        report = {"conclusion": "NO_VALIDATION_EVIDENCE_YET", "rows": [],
+                  "summary": {"executed": 0, "passed": 0, "failed": 0,
+                              "not_executed": 0, "stale": 0},
+                  "stale_heads": [], "head": git_head(repo),
+                  "note": "no witnessed evidence recorded yet"}
+    commits = []
+    p = subprocess.run(["git", "-C", str(repo), "log", "--oneline",
+                        "%s..HEAD" % s.get("base_sha", "HEAD")],
+                       capture_output=True, text=True, shell=False)
+    if p.returncode == 0:
+        commits = [l for l in p.stdout.splitlines() if l.strip()]
+    prov = st.get("context", {}).get("provenance") or []
+
+    def w(name: str, text: str):
+        (out_dir / name).write_text(text)
+
+    w("walkthrough.md", "# Change Walkthrough\n\nTask: %s\nQuery: %s\n\nCommits:\n%s\n"
+      % (s.get("task_id"), st.get("task_text"),
+         "\n".join("- %s" % c for c in commits) or "- (none yet)"))
+    w("root-cause.md", "# Root Cause\n\nKnown facts:\n%s\n\nHypotheses:\n%s\n\nEvidence:\n%s\n"
+      % (_bullets(st.get("known_facts")),
+         _bullets(st.get("hypotheses")),
+         _bullets(st.get("evidence"))))
+    w("code-neighborhood.md", "# Relevant Code Neighborhood\n\n%s"
+      % ("\n".join("- `%s::%s` %s — WHY: %s (digest %s)"
+                   % (p.get("path"), p.get("symbol", "-"),
+                      p.get("span") or [p.get("start_line"), p.get("end_line")],
+                      p.get("why", ""), (p.get("source_digest") or "?")[:12])
+                   for p in prov) or "- (none)"))
+    w("validation-summary.md", validation_report.render_markdown(report, repo))
+    scope_files = (s.get("artifacts") or {}).get("scope_audit") or []
+    scope_txt = ""
+    for sp in scope_files:
+        if Path(sp).exists():
+            try:
+                d = json.loads(Path(sp).read_text())
+                scope_txt = "Conclusion: %s — %s" % (d.get("conclusion"),
+                                                     d.get("reason", ""))
+            except json.JSONDecodeError:
+                pass
+    w("risk-and-nongoals.md",
+      "# Risk / Non-goals\n\nBackend limitations:\n%s\n\nScope: %s\nNon-goals: "
+      "no unrelated cleanup; no behavior change beyond the localized target.\n"
+      % (_bullets([{"text": l} for l in
+                   (st.get("context", {}).get("backends", {}).get("limitations") or [])]),
+         scope_txt or "(scope audit not recorded yet)"))
+    w("understanding-prompts.md",
+      "# Contributor Understanding prompts\n\n"
+      "1. Can you explain the root cause in one sentence using the facts above?\n"
+      "2. Which invariant does the patch preserve?\n"
+      "3. Which regression test proves the fix, and why does it fail before?\n"
+      "4. What does the patch NOT change?\n")
+    w("issue-draft.md",
+      "# Draft (from session evidence)\n\nQuery: %s\n\nRoot cause facts:\n%s\n"
+      "\nProposed change:\n%s\n"
+      % (st.get("task_text"), _bullets(st.get("known_facts")),
+         "\n".join("- %s" % c for c in commits) or "- (no commits yet)"))
+    print("report written to %s" % out_dir)
+    return 0
+
+
+def _bullets(items) -> str:
+    return "\n".join("- %s" % i.get("text", i) for i in (items or [])) or "- (none)"
+
+
+def cmd_status_v10(repo: Path, args) -> int:  # thin extension of cmd_status
+    cmd_status(repo, args)
+    st = _load_investigation(repo)
+    if st.get("task_text"):
+        print("investigation: %s" % st.get("next_best_action", ""))
+        print("unresolved: %d  facts: %d  evidence: %d" % (
+            len(st.get("unresolved", [])), len(st.get("known_facts", [])),
+            len(st.get("evidence", []))))
+    return 0
+
+
+def cmd_read_rules(repo: Path, args) -> int:
+    """Discover repository-local binding rules, read them fully, record both
+    artifacts (RULES_DISCOVERED + RULES_READ) — the whole rules step in one op."""
+    from contribution_rules_scan import binding_manifest as _bm, read_receipt as _rr
+    man = _bm(repo, max_depth=4)
+    man_str = man if isinstance(man, str) else json.dumps(man, indent=2)
+    if not isinstance(man, dict):
+        man = json.loads(man_str)
+    mf = repo / EVIDENCE_DIR / "rules-manifest.json"
+    mf.parent.mkdir(parents=True, exist_ok=True)
+    mf.write_text(man_str)
+    rc = cmd_record(repo, argparse.Namespace(kind="rules-discovered",
+                                             file=[str(mf)], conclusion=None,
+                                             reason=None))
+    if rc != 0:
+        return rc
+    docs = man.get("binding", [])
+    if not docs:
+        print("RESULT         NO_BINDING_RULES (nothing to read)")
+        return 0
+    claims = [{"path": d["path"], "scope": "root",
+               "why": "applies to this contribution"} for d in docs]
+    artifact = _rr(repo, Path(mf), claims)
+    rrj = repo / EVIDENCE_DIR / "rules-read.json"
+    rrj.write_text(json.dumps(artifact, indent=2))
+    rc = cmd_record(repo, argparse.Namespace(kind="rules-read",
+                                             file=[str(rrj)], conclusion=None,
+                                             reason=None))
+    if rc != 0:
+        return rc
+    print("RESULT         RULES READ: %s" % ", ".join(d["path"] for d in docs))
+    return 0
+
+
+def cmd_evidence(repo: Path, args) -> int:
+    """Witnessed command execution recorded into the tamper-evident manifest —
+    the same evidence gates read. Thin delegation to the manifest module."""
+    import evidence_manifest
+    return evidence_manifest.cmd_record(
+        repo, args.purpose, args.command, expect_fail=args.expect_fail,
+        head_bound=args.head_bound, evidence_type=args.evidence_type,
+        regression_id=args.regression_id, test_files=args.test_file or [])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Contribution session runtime (V5 spine).")
     ap.add_argument("repo", nargs="?", default=".")
@@ -1286,6 +1729,77 @@ def main() -> int:
 
     p = sub.add_parser("reconstruct")
     p.set_defaults(func=cmd_reconstruct)
+
+    # ---- V10 production surface (the Agent's primary workflow) -------------
+    p = sub.add_parser("evidence",
+                       help="witnessed command execution → tamper-evident "
+                            "manifest entry (REPRODUCTION / RED / GREEN)")
+    p.add_argument("--purpose", required=True)
+    p.add_argument("--evidence-type", default="GENERAL",
+                   choices=["BASELINE", "BUILD", "GENERAL", "GREEN_REGRESSION",
+                            "INTEGRATION", "LINT", "PACKAGE_TEST", "RECON",
+                            "RED_REGRESSION", "REPRODUCTION"])
+    p.add_argument("--expect-fail", action="store_true")
+    p.add_argument("--head-bound", action="store_true")
+    p.add_argument("--regression-id")
+    p.add_argument("--test-file", action="append")
+    p.add_argument("command", nargs=argparse.REMAINDER)
+    p.set_defaults(func=cmd_evidence)
+
+    p = sub.add_parser("read-rules",
+                       help="discover + fully read repo-local binding rules; "
+                            "records RULES_DISCOVERED and RULES_READ")
+    p.set_defaults(func=cmd_read_rules)
+
+    p = sub.add_parser("investigate",
+                       help="prepare intelligence → route → localize → pack → "
+                            "verify → persist Investigation State")
+    p.add_argument("--task-text", required=True)
+    p.add_argument("--task-type", default="issue2code",
+                   choices=["bug_report", "stack_trace", "review_comment",
+                            "test_failure", "edit_impact", "explore",
+                            "issue2code"])
+    p.set_defaults(func=cmd_investigate)
+
+    p = sub.add_parser("note",
+                       help="record a fact/hypothesis/evidence/… into the "
+                            "Investigation State (survives restart)")
+    p.add_argument("--kind", required=True,
+                   help="known_facts|hypotheses|evidence|contradictions|"
+                        "unresolved|root-cause|rejected")
+    p.add_argument("--text", required=True)
+    p.add_argument("--next", help="set the next best action")
+    p.set_defaults(func=cmd_note)
+
+    p = sub.add_parser("read-source",
+                       help="read a candidate span with WHY/RELATION/BACKEND/"
+                            "SOURCE; expansion ONLY via --follow-question")
+    p.add_argument("--path", required=True)
+    p.add_argument("--start", type=int, required=True)
+    p.add_argument("--end", type=int)
+    p.add_argument("--follow-question")
+    p.set_defaults(func=cmd_read_source)
+
+    p = sub.add_parser("refresh-context",
+                       help="re-run investigate on the stored task text "
+                            "(re-detect backends, rebuild pack, re-verify)")
+    p.set_defaults(func=cmd_refresh_context)
+
+    p = sub.add_parser("explain-blocker",
+                       help="what blocks the next transition and which "
+                            "operation refreshes it")
+    p.set_defaults(func=cmd_explain_blocker)
+
+    p = sub.add_parser("resume",
+                       help="detect HEAD/rules/pack/validation/backend drift "
+                            "and list exactly what must be refreshed")
+    p.set_defaults(func=cmd_resume)
+
+    p = sub.add_parser("report",
+                       help="project session evidence into walkthrough / root "
+                            "cause / neighborhood / validation / risk / "
+                            "understanding / draft outputs")
+    p.set_defaults(func=cmd_report)
 
     args = ap.parse_args()
     repo = Path(args.repo).resolve()
