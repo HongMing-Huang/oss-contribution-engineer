@@ -8,7 +8,7 @@
     "levels": {
       "contribution_session_state_machine": "REAL_TASK_VALIDATED (real-repo PATCH_READY and NO_PATCH runs)",
       "repository_intelligence_backends": "REAL_BACKEND_VALIDATED (serena-agent on Go+TS with resolved references; python-ast on real tasks)",
-      "session_workflow_investigate_note_read_source_resume_report": "IMPLEMENTED (this integration goal; upgrade to REAL_TASK_VALIDATED via the acceptance run)",
+      "session_workflow_investigate_note_read_source_resume_report": "REAL_TASK_VALIDATED (two independent real-repo PATCH_READY runs driven solely through the session surface: click-3805 and requests-7502; see dev/v10/EXPERIMENT-LEDGER.md)",
       "aoci_runtime_client": "REAL_BACKEND_VALIDATED (contract-conformant service; official upstream runtime still unproven)",
       "two_stage_localization": "REAL_TASK_VALIDATED (blind-task comparison led to simplification: expansion removed from default)",
       "experiment_history": "V8/V9/V10 are labels of experiment rounds under dev/ only — they carry no maturity meaning"

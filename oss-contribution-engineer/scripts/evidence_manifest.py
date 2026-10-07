@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import shlex
 import subprocess
@@ -88,7 +89,8 @@ def _file_digest(path: str) -> str | None:
 def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
                head_bound: bool = False, evidence_type: str = "GENERAL",
                regression_id: str | None = None,
-               test_files: list[str] | None = None) -> int:
+               test_files: list[str] | None = None,
+               cwd: str | None = None) -> int:
     if not command:
         print("error: no command given after '--'", file=sys.stderr)
         return 2
@@ -107,7 +109,11 @@ def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
     start = time.monotonic()
     # argv list, shell=False; /usr/bin/env is a fixed loader that resolves $PATH for the
     # program name so no shell layer is involved at any point.
-    p = subprocess.run(["/usr/bin/env", *command], capture_output=True, text=True, shell=False)
+    # V9 failure F4: commands ran from the CALLER's cwd — cwd-dependent tests
+    # (glob expansion, relative paths) failed spuriously. --cwd pins the run
+    # (recorded in the entry so staleness checks can see it).
+    p = subprocess.run(["/usr/bin/env", *command], capture_output=True, text=True,
+                       shell=False, cwd=cwd)
     duration_ms = int((time.monotonic() - start) * 1000)
 
     output = (p.stdout or "") + (("\n--- stderr ---\n" + p.stderr) if p.stderr else "")
@@ -146,7 +152,9 @@ def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
         "artifact": str(artifact.relative_to(repo)),
         "artifact_sha256": sha,
         "git_head": git_head(repo),
-        "cwd": str(Path.cwd()),
+        # V9 F4: record the EFFECTIVE cwd (the --cwd value when given), not the
+        # caller's — staleness/review can then see where the command really ran
+        "cwd": str(Path(cwd).resolve()) if cwd else str(Path.cwd()),
         "environment": {"python": sys.version.split()[0], "platform": platform.platform()},
     }
     append(manifest, entry)
@@ -250,6 +258,8 @@ def main() -> int:
     p_rec.add_argument("--test-file", action="append",
                        help="regression test file(s) whose digests are recorded as "
                             "identity — changing them after RED invalidates the proof")
+    p_rec.add_argument("--cwd", help="working directory for the witnessed command "
+                                     "(V9 F4: cwd-dependent tests need this)")
     p_rec.add_argument("command", nargs=argparse.REMAINDER, help="command after '--'")
 
     p_skip = sub.add_parser("record-skip", help="record a non-execution explicitly")
@@ -272,7 +282,8 @@ def main() -> int:
     if args.cmd == "record":
         command = [c for c in args.command if c != "--"]
         return cmd_record(repo, args.purpose, command, args.expect_fail, args.head_bound,
-                          args.evidence_type, args.regression_id, args.test_file)
+                          args.evidence_type, args.regression_id, args.test_file,
+                          cwd=args.cwd)
     if args.cmd == "record-skip":
         return cmd_record_skip(repo, args.purpose, args.status, args.reason)
     if args.cmd == "show":

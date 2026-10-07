@@ -55,7 +55,7 @@ STATES = ["DISCOVER", "RECON", "CANDIDATE", "DEDUPLICATE", "PROVE", "RED", "PATC
 
 CLASSIFICATIONS = {"AVAILABLE", "CLAIMED", "PR_EXISTS", "DESIGN_BLOCKED",
                    "NEEDS_MAINTAINER_DECISION", "INVALID", "STALE", "TOO_LARGE",
-                   "TOO_TRIVIAL", "GOOD_CANDIDATE"}
+                   "TOO_TRIVIAL", "GOOD_CANDIDATE", "UNCONFIRMED"}
 
 REMOTE_ACTIONS = {"OPEN_ISSUE", "COMMENT_ISSUE", "PUSH_BRANCH", "OPEN_PR",
                   "UPDATE_PR", "REPLY_REVIEW", "REQUEST_REREVIEW"}
@@ -85,9 +85,12 @@ def repository_identity(repo: Path) -> str:
         str(Path(root.stdout.strip() or str(repo)).resolve()).encode()).hexdigest()[:12]
     return "local-" + fingerprint
 
-# triage classifications that END the run without a patch (V2: no-patch is success)
+# triage classifications that END the run without a patch (V2: no-patch is success).
+# UNCONFIRMED added in V9→V10 (failure record F6): a real race/bug that could not
+# be reproduced needs its own honest terminal class — the nearest existing class
+# (DESIGN_BLOCKED) misdescribed it.
 STOPPING = {"CLAIMED", "PR_EXISTS", "DESIGN_BLOCKED", "NEEDS_MAINTAINER_DECISION",
-            "INVALID", "STALE", "TOO_LARGE", "TOO_TRIVIAL"}
+            "INVALID", "STALE", "TOO_LARGE", "TOO_TRIVIAL", "UNCONFIRMED"}
 
 UNDERSTANDING = {"UNDERSTOOD", "DEFERRED", "INCOMPLETE"}
 
@@ -1657,7 +1660,8 @@ def cmd_evidence(repo: Path, args) -> int:
     return evidence_manifest.cmd_record(
         repo, args.purpose, args.command, expect_fail=args.expect_fail,
         head_bound=args.head_bound, evidence_type=args.evidence_type,
-        regression_id=args.regression_id, test_files=args.test_file or [])
+        regression_id=args.regression_id, test_files=args.test_file or [],
+        cwd=args.cwd)
 
 
 def main() -> int:
@@ -1743,6 +1747,8 @@ def main() -> int:
     p.add_argument("--head-bound", action="store_true")
     p.add_argument("--regression-id")
     p.add_argument("--test-file", action="append")
+    p.add_argument("--cwd", help="working directory for the witnessed command "
+                                 "(V9 F4)")
     p.add_argument("command", nargs=argparse.REMAINDER)
     p.set_defaults(func=cmd_evidence)
 

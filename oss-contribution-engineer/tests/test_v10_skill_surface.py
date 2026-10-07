@@ -128,3 +128,29 @@ def test_report_projects_session_evidence(repo):
             "understanding-prompts.md", "issue-draft.md"} <= names
     rc = (out / "root-cause.md").read_text()
     assert "alpha delegates to base_value" in rc, "projection from evidence, not hand-written"
+
+
+def test_evidence_cwd_pins_the_witnessed_run(repo):
+    # V9 F4: without --cwd the command ran from the caller's cwd and
+    # relative paths failed spuriously; --cwd pins it and is recorded.
+    r = py(str(SESSION), str(repo), "evidence",
+           "--purpose", "cwd-bound run: show repo-local file",
+           "--evidence-type", "REPRODUCTION", "--cwd", str(repo),
+           "--", "/usr/bin/env", "sh", "-c", "test -f CONTRIBUTING.md && pwd")
+    assert r.returncode == 0, r.stderr
+    entry = json.loads(
+        (repo / ".oss-contrib-evidence" / "manifest.jsonl").read_text().splitlines()[-1])
+    assert entry["cwd"] == str(repo)
+    assert entry["status"] == "PASS"
+
+
+def test_unconfirmed_is_a_stopping_classification(repo):
+    # V9 F6: a real issue that cannot be reproduced needs an honest terminal
+    # class; UNCONFIRMED must end the run and block patch-side states.
+    r = py(str(SESSION), str(repo), "set-classification",
+           "--classification", "UNCONFIRMED")
+    assert r.returncode == 0, r.stderr
+    r2 = py(str(SESSION), str(repo), "advance", "--to", "DEDUPLICATE")
+    assert r2.returncode != 0, "UNCONFIRMED is not STOPPING"
+    r3 = py(str(SESSION), str(repo), "advance", "--to", "PROVE")
+    assert r3.returncode != 0, "UNCONFIRMED is not STOPPING"
