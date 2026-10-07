@@ -1260,10 +1260,49 @@ def _ri():
     return repository_intelligence
 
 
+def _fetch_issue_source(issue_ref: str) -> dict:
+    """Fetch an issue's VERBATIM title+body via gh (pre-fix source material).
+    issue_ref: OWNER/REPO#123 or #123 (repo inferred from session)."""
+    import re as _re
+    m = _re.fullmatch(r"(?:(\S+)/(\S+))?#(\d+)", issue_ref.strip())
+    if not m:
+        raise ValueError("issue ref must be OWNER/REPO#123 or #123")
+    slug = "%s/%s" % (m.group(1), m.group(2)) if m.group(1) else None
+    num = m.group(3)
+    cmd = ["/usr/bin/env", "gh", "issue", "view", num, "--json",
+           "title,body,url,createdAt"]
+    if slug:
+        cmd += ["--repo", slug]
+    p = subprocess.run(cmd, capture_output=True, text=True, shell=False)
+    if p.returncode != 0:
+        raise ValueError("gh issue view failed: %s" % p.stderr.strip()[:200])
+    d = json.loads(p.stdout)
+    raw = "TITLE: %s\n\n%s" % (d.get("title", ""), d.get("body") or "")
+    return {"raw_text": raw, "query": d.get("title", ""),
+            "body_excerpt": (d.get("body") or "")[:600],
+            "source_url": d.get("url", ""),
+            "source_timestamp": d.get("createdAt", ""),
+            "capture_digest": hashlib.sha256(raw.encode()).hexdigest()}
+
+
 def cmd_investigate(repo: Path, args) -> int:
     """prepare → route → localize → context pack → digest verification →
     persist Investigation State + session context. The Agent never orchestrates
     the implementation modules."""
+    s = load_session(repo)
+    source_meta = None
+    if not getattr(args, "task_text", None) and not getattr(args, "from_issue", None):
+        print("error: provide --task-text or --from-issue", file=sys.stderr)
+        return 2
+    if getattr(args, "from_issue", None):
+        try:
+            fetched = _fetch_issue_source(args.from_issue)
+        except ValueError as exc:
+            print("error: %s" % exc, file=sys.stderr)
+            return 2
+        args.task_text = fetched["query"] + " " + fetched["body_excerpt"]
+        source_meta = {k: fetched[k] for k in
+                       ("source_url", "source_timestamp", "capture_digest")}
     s = load_session(repo)
     ri = _ri()
     prep = ri.prepare(repo, args.task_text, args.task_type)
@@ -1276,6 +1315,8 @@ def cmd_investigate(repo: Path, args) -> int:
     st = _load_investigation(repo)
     st["task_text"] = args.task_text
     st["task_type"] = args.task_type
+    if source_meta:
+        st["source"] = source_meta
     st["candidate_files"] = loc_res["candidate_files"]
     st["candidate_root_causes"] = [
         {"path": p["path"], "symbol": p["symbol"], "span": p["span"],
@@ -1760,7 +1801,11 @@ def main() -> int:
     p = sub.add_parser("investigate",
                        help="prepare intelligence → route → localize → pack → "
                             "verify → persist Investigation State")
-    p.add_argument("--task-text", required=True)
+    p.add_argument("--task-text",
+                   help="task text verbatim (OR --from-issue)")
+    p.add_argument("--from-issue",
+                   help="OWNER/REPO#123 or #123 — fetch the issue's verbatim "
+                        "title+body via gh as the blind task source")
     p.add_argument("--task-type", default="issue2code",
                    choices=["bug_report", "stack_trace", "review_comment",
                             "test_failure", "edit_impact", "explore",

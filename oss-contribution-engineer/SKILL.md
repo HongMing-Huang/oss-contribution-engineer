@@ -31,6 +31,8 @@ directly; those are implementation modules behind this surface.
 ```bash
 S=python3 <skill-dir>/scripts/contribution_session.py
 
+$S <repo> investigate --from-issue 123 [--task-type stack_trace]
+    # fetches the issue's verbatim title+body via gh as the blind task source
 $S <repo> investigate --task-text "<the task, verbatim>" [--task-type bug_report|stack_trace|review_comment|test_failure|edit_impact|explore|issue2code]
     # prepares repository intelligence (backend selection is automatic and
     # visible: AOCI runtime/file, Serena/LSP, python-ast, lexical — every

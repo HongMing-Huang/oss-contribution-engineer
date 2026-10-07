@@ -154,3 +154,17 @@ def test_unconfirmed_is_a_stopping_classification(repo):
     assert r2.returncode != 0, "UNCONFIRMED is not STOPPING"
     r3 = py(str(SESSION), str(repo), "advance", "--to", "PROVE")
     assert r3.returncode != 0, "UNCONFIRMED is not STOPPING"
+
+
+def test_investigate_requires_a_task_source(repo):
+    r = py(str(SESSION), str(repo), "investigate")
+    assert r.returncode == 2
+    assert "task-text or --from-issue" in r.stderr
+
+
+def test_from_issue_ref_parser_rejects_malformed(repo):
+    # malformed --from-issue values are rejected before any gh call
+    r = py(str(SESSION), str(repo), "investigate",
+           "--from-issue", "not-an-issue-ref")
+    assert r.returncode == 2
+    assert "OWNER/REPO#123" in r.stderr
