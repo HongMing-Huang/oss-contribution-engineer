@@ -1339,6 +1339,15 @@ def cmd_investigate(repo: Path, args) -> int:
     save_session(repo, s)
     print("RESULT         INVESTIGATED")
     print("backends used: %s" % ", ".join(prep["backends"]["selected"]))
+    ser = loc_res.get("serena") or {}
+    if ser.get("used"):
+        print("lsp symbols:   %d hit(s) for %s%s" % (
+            len(ser.get("hits", [])),
+            ", ".join(ser.get("identifiers_tried", [])),
+            " (errors: %s)" % "; ".join(ser.get("errors", []))[:120]
+            if ser.get("errors") else ""))
+    elif ser.get("reason"):
+        print("lsp symbols:   not used — %s" % ser["reason"][:100])
     for c in prep["backends"]["backends"]:
         if c["status"] in ("skipped", "degraded"):
             print("  fallback:    %-18s %-9s %s" % (c["backend"], c["status"],

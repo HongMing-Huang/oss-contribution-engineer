@@ -173,9 +173,88 @@ def prepare(repo: Path, task_text: str, task_type: str = "issue2code") -> dict:
 
 
 # ---------------------------------------------------------------- locate
+def _serena_symbols(repo: Path, query: str) -> dict:
+    """V11 backlog #1: consume the configured LSP for symbol-level localization.
+    find_symbol per query identifier; defensive payload parsing; every failure
+    is RETURNED (never swallowed) so fallback stays visible."""
+    import re as _re
+    from mcp_stdio_client import McpStdioClient, McpError, McpUnavailable
+
+    argv = sb.serena_command(repo)
+    if not argv:
+        return {"used": False, "reason": "SERENA_MCP_COMMAND not configured"}
+    # the configured command is static; the project is per-call — inject
+    # --project when the server is invoked without one (v9 harness parity)
+    if "start-mcp-server" in argv and "--project" not in argv:
+        i = argv.index("start-mcp-server")
+        argv = argv[:i + 1] + ["--project", str(repo)] + argv[i + 1:]
+    ids = []
+    for tok in sorted(set(_re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", query)),
+                      key=lambda t: (-len(t), t.lower())):
+        if tok not in ids:
+            ids.append(tok)
+        if len(ids) >= 4:
+            break
+    out_rows, errors = [], []
+    try:
+        with McpStdioClient(argv, cwd=str(repo), request_timeout=300.0) as client:
+            for ident in ids:
+                try:
+                    res = client.call_tool("find_symbol",
+                                           {"name_path": ident,
+                                            "include_body": False})
+                except McpError as exc:
+                    errors.append("find_symbol(%s): %s" % (ident, str(exc)[:120]))
+                    continue
+                text = res.get("text", "")
+                if text.startswith("Error executing tool"):
+                    errors.append("find_symbol(%s): %s" % (ident, text[:120]))
+                    continue
+                try:
+                    matches = json.loads(text)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(matches, dict):
+                    matches = matches.get("matches", [])
+                for m in matches[:5]:
+                    if not isinstance(m, dict):
+                        continue
+                    path = (m.get("relative_path") or m.get("body_path")
+                            or m.get("path"))
+                    name = (m.get("name") or
+                            str(m.get("name_path", "")).rsplit(".", 1)[-1])
+                    line = None
+                    loc_raw = m.get("location") or m.get("body_location") or {}
+                    if isinstance(loc_raw, dict):
+                        rng = loc_raw.get("range") or loc_raw
+                        if isinstance(rng, dict):
+                            line = rng.get("start_line") or rng.get("line")
+                    elif isinstance(loc_raw, int):
+                        line = loc_raw
+                    if path and name:
+                        out_rows.append({"path": str(path), "symbol": str(name),
+                                         "kind": m.get("kind", ""),
+                                         "start_line": line or 0})
+    except (McpUnavailable, OSError, ValueError) as exc:
+        return {"used": False, "reason": "server unavailable: %s" % str(exc)[:200]}
+    hits = []
+    for r in out_rows:
+        d = _digest(repo, r["path"])
+        hits.append({"path": r["path"], "symbol": r["symbol"],
+                     "kind": r["kind"],
+                     "start_line": r["start_line"], "end_line": r["start_line"],
+                     "source_digest": d,
+                     "digest_state": "CURRENT" if d else "MISSING"})
+    return {"used": True, "identifiers_tried": ids, "hits": hits,
+            "errors": errors}
+
+
 def locate(repo: Path, task_text: str, task_type: str = "issue2code",
            prepare_result: dict | None = None) -> dict:
-    """Route + localize on the prepared snapshot; attach provenance."""
+    """Route + localize on the prepared snapshot; attach provenance.
+    V11: when a semantic LSP is configured it is CONSUMED (find_symbol on
+    query identifiers) — closing the advertise-but-don't-call gap for
+    non-Python repos, where the python-ast symbol family is empty."""
     query = task_text
     report = rr.route(str(repo), query, task_type, None, 8, 2, 50)
     files = [c["path"] for c in report["candidates"]]
@@ -202,8 +281,21 @@ def locate(repo: Path, task_text: str, task_type: str = "issue2code",
                 "digest_state": "CURRENT" if _digest(repo, f["path"]) == f["source_digest"]
                 else "CHANGED"}
         provenance.append(prov)
+    # V11 #1: LSP symbol localization (visible; failures recorded, not hidden)
+    serena = _serena_symbols(repo, query)
+    for h in serena.get("hits", []):
+        if h["path"] not in files:
+            files.append(h["path"])
+        provenance.append({
+            "path": h["path"], "symbol": h["symbol"],
+            "span": [h["start_line"], max(h["end_line"], h["start_line"])],
+            "why": "LSP find_symbol on query identifier (resolved definition)",
+            "relation": "definition", "backend": "serena-lsp",
+            "source_digest": h["source_digest"],
+            "digest_state": h["digest_state"]})
     return {"query": query, "router": report, "localization": loc_res,
             "candidate_files": files, "provenance": provenance,
+            "serena": serena,
             "exit_reason": loc_res["exit_reason"],
             "stop_evidence": loc_res.get("stop_evidence")}
 
