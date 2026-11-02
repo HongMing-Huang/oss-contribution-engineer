@@ -53,18 +53,13 @@ $S <repo> report              # project session evidence into walkthrough / root
 ```
 
 A run ends in NO_PATCH (classification via `set-classification`) or PATCH_READY;
-both are first-class outcomes.
-
-It persists one session record (`.oss-contrib-evidence/session.json`), knows which evidence exists, and
-**refuses illegal operations with a non-zero exit** — you cannot advance the state
-machine, edit production code, or reach PR_READY without the machine evidence the
-gates require, and stale head-bound validation mechanically blocks advancement.
-
-```bash
-python3 <skill-dir>/scripts/contribution_session.py <repo> init --task-id <id> --goal <contract.json>
-python3 <skill-dir>/scripts/contribution_session.py <repo> status            # state + gate gaps + legal next
-python3 <skill-dir>/scripts/contribution_session.py <repo> advance --to <STATE>
-```
+both are first-class outcomes. The runtime persists one session record
+(`.oss-contrib-evidence/session.json`) and **refuses illegal operations with a
+non-zero exit** — no state advance, no production edit, no PR_READY without the
+machine evidence the gates require; stale head-bound validation mechanically
+blocks advancement. Start with `init --task-id <id> --goal <contract.json>`;
+`status` shows state + gate gaps + the legal next transition; `advance --to
+<STATE>` moves when gates pass.
 
 Other commands: `set-authority` (grants REQUIRE --by-user + --evidence-ref),
 `record` (recon/dedupe/walkthrough/scope-audit/patch-intent/plan/pack/receipt),
@@ -144,20 +139,12 @@ strictly separate from what you guess will satisfy it. An implementation hypothe
 never the goal; hypotheses live in `goal_compiler.py <repo> hypotheses ...` records,
 outside the immutable contract.
 
-```bash
-python3 <skill-dir>/scripts/goal_compiler.py <repo> compile --intent "..." \
-  --done-when "run: python3 -m pytest -q" --done-when "Investigation Report concludes CONFIRMED" \
-  --repository <slug> --domains <guesses> --authority read
-```
-
-Rules: `scope`/`domains`/`unknowns` are recorded as guesses; `done_when` needs at least
-one observable acceptance item (`run:`/`test`/`artifact`/`maintainer reply`) or the
-compiler rejects the contract; `remote_write` is never compiled in. The compiler emits
-the compact **Goal Card** (GOAL/DONE/SCOPE/UNKNOWN/NEXT/AUTH); investigation reports in
-the FOUND/EVIDENCE/IMPACT/NEXT blocks of "Progress communication" below; PATCH INTENT is
-the block form of the PATCH PLAN; closure uses RESULT/PROOF/WHAT CHANGED/REMAINING RISK.
-Full spec: references/goal-contracts.md. After context compaction, reconstruct from the
-Task Cognition Receipt and open with `RESULT RECONSTRUCTED` — never recite memory.
+Rules: `scope`/`domains`/`unknowns` are recorded as guesses; `done_when` needs at
+least one observable acceptance item (`run:`/`test`/`artifact`/`maintainer reply`) or
+the compiler rejects the contract; `remote_write` is never compiled in. The compiler
+emits the compact **Goal Card** (GOAL/DONE/SCOPE/UNKNOWN/NEXT/AUTH). Full spec:
+references/goal-contracts.md. After context compaction, reconstruct from the Task
+Cognition Receipt and open with `RESULT RECONSTRUCTED` — never recite memory.
 
 ## Operating modes
 
@@ -234,15 +221,11 @@ the new GREEN.
 
 ## Upstream lifecycle (IN_REVIEW) — evidence-bound
 
-The run does not end at PR_READY. The upstream state comes from captured platform data,
-never from the agent's own report ("review handled", "CI passed", "ready for rereview"
-are meaningless without a capture):
-
-```bash
-python3 <skill-dir>/scripts/upstream_state.py commands --slug OWNER/REPO --pr 123   # prints capture commands
-python3 <skill-dir>/scripts/upstream_state.py classify --pr-file pr.json \
-    --reviews-file reviews.json --timeline-file timeline.json --local-repo <repo>
-```
+The run does not end at PR_READY. The upstream state comes from captured platform
+data, never from the agent's own report ("review handled", "CI passed", "ready for
+rereview" are meaningless without a capture): run `upstream_state.py commands` to
+print the capture commands, then `classify --pr-file/--reviews-file/--timeline-file`
+on the captured JSON.
 
 The classifier outputs exactly one lifecycle status with the facts behind it (head SHA,
 state, merge flag, latest review, commits after review, re-review signal) and never
@@ -276,12 +259,9 @@ the outcome as UNDERSTOOD (only on explicit human confirmation), DEFERRED, or IN
 
 ## Repository recon (always first)
 
-Run, from the repository root:
-
-```bash
-python3 <skill-dir>/scripts/repo_audit.py .
-python3 <skill-dir>/scripts/contribution_rules_scan.py .
-```
+Run `repo_audit.py .` and `contribution_rules_scan.py .` from the repository root
+(or the one-op `read-rules`, which records both the RULES_DISCOVERED manifest and
+the full-read receipt).
 
 Then read the files they surface (CONTRIBUTING, AGENTS.md, CLAUDE.md, SECURITY,
 CODEOWNERS, PR/issue templates, CI configs) and produce the Repository Contribution
@@ -296,50 +276,41 @@ proves, tests verify, history explains.** Understanding is hierarchical (L0 proj
 L1 subsystem → L2 component → L3 object → L4 current source); a task starts at L0/L1
 and descends only through relevant areas.
 
-1. **Backend** (from recon): AOCI_FILE when `aoci.*.txt` volumes exist and sampled
-   entries re-hash aligned against `.aoci/baseline.json`; NATIVE_PROJECT_MEMORY when
-   this skill's persisted profile/receipts exist; else LIGHTWEIGHT_FALLBACK. Never
-   regenerate a whole-repo semantic index when an aligned AOCI index exists; cognition
-   claims are leads, never truth.
-2. **Route retrieval by task type** — no universal ranking policy:
+The `investigate` op does all of this; the internals, for reference:
 
-```bash
-python3 <skill-dir>/scripts/retrieval_router.py <repo> "<query>" --task-type trace2code --top-k 8 --json
-```
-
-   Signals: lexical (BM25), path, symbol, test-relations, git history, cognition,
-   bounded graph expansion (priority queue, depth ≤2, distance penalty) — fused by RRF
-   with task priors. The router may return NO_RELEVANT_LOCAL_CONTEXT (abstention report
-   with factors; scores are ordering evidence, never calibrated probabilities).
-3. **Plan before reading, pack as spans**: `context_planner.py plan` → Task Context
-   Plan (radius tiers with reasons, token allocation, visible exclusions); Radius 1 =
-   targets + direct strong relations + direct tests + contracts; expand to Radius 2
-   (callers/callees/siblings) or 3 (subsystem/history) only with a recorded reason
-   naming what R1 failed to establish. `context_planner.py pack` delivers a bounded
-   Context Pack of symbol **spans** with digest + why — not whole files.
-4. **Enforce budgets**: `budget_governor.py <pack.json>` — at soft budget: rerank,
-   prune to spans, externalize to the receipt, drop superseded observations; never
-   drop goal/done_when/safety constraints/blockers/source identities; silent
-   truncation is banned.
-5. **Verify sources**: record every real read with `cognition_receipt.py
-   open/record-read/verify/close`; `verify` re-hashes and flags CHANGED files — never
-   mix obsolete source with current source. Before editing any object, read its
-   current source; no summary, embedding, graph, or memory substitutes for this.
+1. **Backend** (from recon, automatic + visible in investigate output): AOCI runtime
+   receipt when a COMPLETE cognition session exists; AOCI_FILE when `aoci.*.txt`
+   volumes re-hash aligned against `.aoci/baseline.json`; Serena/LSP when configured;
+   python-ast for Python repos; else lexical LIGHTWEIGHT_FALLBACK. Never regenerate a
+   whole-repo semantic index when an aligned AOCI index exists; cognition claims are
+   leads, never truth.
+2. **Route retrieval by task type** — no universal ranking policy. Signals: lexical
+   (BM25), path, symbol, test-relations, git history, cognition, bounded graph
+   expansion — fused by RRF with task priors. The router may return
+   NO_RELEVANT_LOCAL_CONTEXT (abstention report with factors; scores are ordering
+   evidence, never calibrated probabilities).
+3. **Plan before reading, pack as spans**: Task Context Plan (radius tiers with
+   reasons, token allocation, visible exclusions); Radius 1 = targets + direct strong
+   relations + direct tests + contracts; expand to Radius 2/3 only with a recorded
+   reason naming what R1 failed to establish. The Context Pack delivers bounded
+   symbol **spans** with digest + why — not whole files.
+4. **Enforce budgets**: at soft budget rerank, prune to spans, externalize to the
+   receipt, drop superseded observations; never drop goal/done_when/safety
+   constraints/blockers/source identities; silent truncation is banned.
+5. **Verify sources**: every real read is digest-bound; re-hashing flags CHANGED
+   files — never mix obsolete source with current source. Before editing any object,
+   read its current source; no summary, embedding, graph, or memory substitutes.
 
 Method and anti-patterns: references/context-acquisition.md, retrieval-strategies.md,
 context-packing.md; evaluation: references/retrieval-evaluation.md.
 
 ## Evidence and validation
 
-Record every consequential command with the witness script so results cannot be
-hand-written:
-
-```bash
-python3 <skill-dir>/scripts/evidence_manifest.py <repo> record --purpose "RED: regression test fails on unmodified upstream" --expect-fail -- <test-command...>
-python3 <skill-dir>/scripts/evidence_manifest.py <repo> record --purpose "GREEN: regression test after fix" --head-bound -- <test-command...>
-python3 <skill-dir>/scripts/evidence_manifest.py <repo> record-skip --purpose "integration suite" --status SKIPPED --reason "requires docker; not available"
-python3 <skill-dir>/scripts/validation_report.py <repo>   # renders the Validation Report table
-```
+Record every consequential command through the session `evidence` op (or the underlying
+`evidence_manifest.py record`) so results cannot be hand-written: `--expect-fail` marks
+RED proofs, `--head-bound` ties GREEN/suites to the HEAD they ran on, `--cwd` pins the
+working directory, `record-skip` records SKIPPED/UNAVAILABLE with a reason;
+`validation_report.py` renders the Validation Report table.
 
 `--expect-fail` marks RED proofs: a non-zero exit is the expected outcome and is not
 counted as a validation failure, while an unexpected exit 0 is recorded FAIL (the proof
@@ -486,14 +457,16 @@ ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/upstream_state.py | prints PR-state capture commands, then classifies captured PR/reviews/timeline JSON into the 8 lifecycle outcomes (MERGED is the only success; closed≠merged never resolves to success) | none — capture via gh or a platform tool |
 | scripts/goal_compiler.py | Goal Contract + Goal Card; done_when observability gate; hypothesis records | none |
 | scripts/retrieval_router.py | hybrid retrieval (lexical/path/symbol/test/history/cognition/graph/lightweight-structural-PageRank over import+test edges), RRF fusion, abstention report; AOCI_FILE alignment; consumes AOCI_RUNTIME receipts + symbol_backend spans with per-candidate provenance | none |
+| scripts/repository_intelligence.py | production orchestrator behind `investigate`: prepare/locate/context/refresh/status; automatic + visible backend selection (AOCI runtime/file, Serena/LSP, python-ast, lexical) with fallback reasons and limitations; digest-verifies packed spans | none |
+| scripts/router_cache.py | opt-in warm Corpus cache (CORPUS_BUILDER hook); cold/warm/update/branch/corruption tested; byte-identical ranking | none |
 | scripts/mcp_stdio_client.py | generic MCP stdio client (JSON-RPC over newline-delimited stdio, `/usr/bin/env`-anchored spawn); tool-surface digest helper | none |
 | scripts/aoci_runtime.py | AOCI_RUNTIME backend: pinned 9-tool surface check → aoci_rules → whole-index overview chain (cursor="start"→next_cursor) → attestation + host confirmation → cognition receipt; identity/generation drift invalidates; search/get-entries gated on COMPLETE; explicit fallback artifact otherwise | none |
 | scripts/aoci_conformance_server.py | contract-conformant AOCI MCP service (aoci-overview-delivery-v1 semantics: chunking, cursors, challenge ≥80%, baseline binding); used for integration runs and tests — serverInfo stays "aoci-conformance", never "aoci-code" | none |
-| scripts/symbol_backend.py | symbol interface (find_symbol / find_references / symbol_span / file_symbols); python-ast first implementation (exact spans, Name/Attribute refs, inheritance); structural graph build + bounded trace (LocAgent-style four edges: contains/imports/inherits/calls, name-match resolution disclosed); AutoCodeRover-style bounded search API (class/method/code/method-in-class); Serena/LSP adapter when SERENA_MCP_COMMAND configured; digest drift verify | none |
-| scripts/localize_two_stage.py | CoSIL-inspired deterministic two-stage localization: router breadth → symbol/graph iterative depth with explicit exit (SUFFICIENT_EVIDENCE / BUDGET / NO_EVIDENCE); digest-bound functions; NOT the CoSIL LLM loop | none |
+| scripts/symbol_backend.py | symbol interface (find_symbol / find_references / symbol_span / file_symbols); python-ast first implementation (exact spans, Name/Attribute refs, inheritance); structural graph build + bounded trace (LocAgent-style four edges: contains/imports/inherits/calls, name-match resolution disclosed); AutoCodeRover-style bounded search API; Serena/LSP adapter when SERENA_MCP_COMMAND configured; digest drift verify | none |
+| scripts/localize_two_stage.py | deterministic two-stage localization: router breadth → shortlist definition matching; correctness-neutral STOPPED_* exits with structured stop_evidence; neighbor-hop expansion removed (V9 evidence: zero benefit, pure noise); NOT the CoSIL LLM loop | none |
 | scripts/backend_integration_run.py | the three real integration runs (AOCI runtime / symbol backend / no-backend fallback) with backend-identity-verification-latency reports | none |
 | scripts/context_planner.py | Task Context Plan + bounded Context Pack of symbol spans with digests | none |
-| scripts/contribution_session.py | V5/V5.2 runtime spine: persisted session state, mechanically gated transitions, action-scoped grants + receipts, typed-evidence gates, worktree-aware pre-patch, upstream substate lifecycle (accept-review-change / request-rereview), reconstruct | none |
+| scripts/contribution_session.py | THE Agent surface: persisted session state + gated state machine + the production ops (investigate --from-issue / note / read-source / evidence --cwd / read-rules / refresh-context / explain-blocker / resume / report); action-scoped grants + receipts; upstream substate lifecycle; reconstruct | none |
 | scripts/budget_governor.py | govern loop: pack→audit→prune→repack→ACCEPT/BLOCKED with displaced_direct reporting | none |
 | scripts/cognition_receipt.py | Task Cognition Receipt: open/record-read/verify (drift detection)/close/reconstruct | none |
 | scripts/retrieval_eval.py | Recall@K, MRR, BCY@B, precision, line metrics; per-task-type + signal ablation; ROUTING REGRET diagnostic | none |

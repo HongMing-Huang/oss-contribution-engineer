@@ -136,7 +136,7 @@ Results: `runs/bench-r1.jsonl`
 - **CHANGE:** `.mimosa` added to the session's bookkeeping exclusion set
   (contribution_session.py) with a comment citing this record. 72 tests green.
 
-### F4 — evidence commands run from the caller's cwd (OPEN)
+### F4 — evidence commands run from the caller's cwd (CLOSED in V10b, commit aa60cb3)
 
 - The first GREEN "failure" and one RED "pass" were environmental artifacts
   (ImportError / file-not-found from a different cwd; a glob test depends on
@@ -149,7 +149,7 @@ Results: `runs/bench-r1.jsonl`
   workaround: static fixture files (`race_child.py`) + shell loops. Harness
   constraint, documented so future rounds don't re-litigate it.
 
-### F6 — classification vocabulary gap (OPEN)
+### F6 — classification vocabulary gap (CLOSED in V10b, commit aa60cb3: UNCONFIRMED added to CLASSIFICATIONS + STOPPING; first real exercise click#3802, dev/v10/runs/v10c-issue3802-result.json)
 
 - No UNCONFIRMED / NOT_REPRODUCIBLE class exists; click-3802 (a real race, not
   reproduced in 120 witnessed rounds — designed-Abort rounds excluded) was
