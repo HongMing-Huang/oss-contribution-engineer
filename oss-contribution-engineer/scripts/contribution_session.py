@@ -742,6 +742,9 @@ def cmd_init(repo: Path, args) -> int:
         print("GATE REFUSED: goal contract was compiled for repository %s but this "
               "session's repository identity is %s"
               % (contract["repository"], repo_id), file=sys.stderr)
+        print("next: recompile the contract for this repository "
+              "(goal_compiler.py <repo> compile --repository %s ...)"
+              % repo_id, file=sys.stderr)
         return 1
     session = {
         "session_version": 2,
@@ -779,24 +782,32 @@ def cmd_status(repo: Path, args=None) -> int:
         s["authority"]["worktree_edit"],
         [g["action"] for g in s["authority"].get("actions", []) if not g.get("consumed_at")]))
     if nxt:
-        req = gate_requirements(nxt)
-        missing = []
-        for _, fn in req["checks"]:
-            missing.extend(fn(repo, s))
-        for auth, why in req["authority"]:
-            if auth.startswith("remote_action "):
-                action = auth.split(" ", 1)[1]
-                if not has_pending_remote_action(s, action):
-                    missing.append("authority %s not granted: %s" % (auth, why))
-            elif not s["authority"].get(auth):
-                missing.append("authority %s not granted: %s" % (auth, why))
-        print("next legal: %s" % nxt)
-        if missing:
-            print("gate gaps:")
-            for m in missing:
-                print("  - %s" % m)
+        # V12 cold-start defect D4: a STOPPING classification makes patch-side
+        # advance mechanically impossible — status must say so, not claim
+        # "advance is legal" and contradict the gate
+        if s.get("classification") in STOPPING:
+            print("next legal: %s  [BLOCKED: classification %s is a stopping "
+                  "outcome — advance will be refused]"
+                  % (nxt, s["classification"]))
         else:
-            print("gate gaps: none — advance is legal")
+            req = gate_requirements(nxt)
+            missing = []
+            for _, fn in req["checks"]:
+                missing.extend(fn(repo, s))
+            for auth, why in req["authority"]:
+                if auth.startswith("remote_action "):
+                    action = auth.split(" ", 1)[1]
+                    if not has_pending_remote_action(s, action):
+                        missing.append("authority %s not granted: %s" % (auth, why))
+                elif not s["authority"].get(auth):
+                    missing.append("authority %s not granted: %s" % (auth, why))
+            print("next legal: %s" % nxt)
+            if missing:
+                print("gate gaps:")
+                for m in missing:
+                    print("  - %s" % m)
+            else:
+                print("gate gaps: none — advance is legal")
     else:
         print("terminal state; upstream outcome: %s"
               % (s.get("upstream") or {}).get("outcome", "not captured"))
@@ -825,6 +836,9 @@ def cmd_advance(repo: Path, args) -> int:
                          % s["classification"]]
         save_session(repo, s)
         print("GATE REFUSED: %s" % s["blockers"][0], file=sys.stderr)
+        print("next: this is a terminal outcome — produce the final report "
+              "(session report); to reopen, reclassify via set-classification",
+              file=sys.stderr)
         return 1
     req = gate_requirements(target)
     missing = []
@@ -841,6 +855,8 @@ def cmd_advance(repo: Path, args) -> int:
         print("GATE REFUSED: cannot advance to %s" % target, file=sys.stderr)
         for m in missing:
             print("  - %s" % m, file=sys.stderr)
+        print("next: %s explain-blocker   # says which operation refreshes each"
+              % ("contribution_session.py <repo>",), file=sys.stderr)
         s["blockers"] = missing
         save_session(repo, s)
         return 1
@@ -1096,6 +1112,9 @@ def cmd_record_remote_action(repo: Path, args) -> int:
         print("GATE REFUSED: upstream was already observed before this grant — a "
               "post-hoc authorization cannot legitimize an already-observed remote "
               "action", file=sys.stderr)
+        print("next: record the honest outcome from the capture (session upstream "
+              "--pr-json) — CLOSED_NOT_MERGED here is a valid terminal result",
+              file=sys.stderr)
         return 1
     grant["consumed_at"] = now()
     receipt = {
@@ -1171,6 +1190,9 @@ def cmd_request_rereview(repo: Path, args) -> int:
         print("GATE REFUSED: request-rereview requires the captured upstream "
               "substate CHANGES_REQUESTED — a rereview request without a real "
               "review signal is an assertion, not evidence", file=sys.stderr)
+        print("next: re-capture the PR state (session upstream --pr-json with a "
+              "fresh reviews file) and retry only if the substate is real",
+              file=sys.stderr)
         return 1
     # validation current is checked FIRST — a passing rerun clears the
     # revalidation debt (check_validation_current persists the cleared flag)
@@ -1179,10 +1201,15 @@ def cmd_request_rereview(repo: Path, args) -> int:
         print("GATE REFUSED: validation is not current", file=sys.stderr)
         for m in missing:
             print("  - %s" % m, file=sys.stderr)
+        print("next: re-record the stale evidence levels with session evidence "
+              "(--head-bound), then retry", file=sys.stderr)
         return 1
     if s.get("review_revalidation_required"):
         print("GATE REFUSED: revalidation debt outstanding — run RED -> GREEN -> "
               "validation after the accepted review change first", file=sys.stderr)
+        print("next: session evidence --evidence-type RED_REGRESSION "
+              "--regression-id … then GREEN_REGRESSION --head-bound (same id)",
+              file=sys.stderr)
         return 1
     grant = None
     for g in s["authority"].get("actions", []):
@@ -1260,19 +1287,29 @@ def _ri():
     return repository_intelligence
 
 
-def _fetch_issue_source(issue_ref: str) -> dict:
+def _fetch_issue_source(issue_ref: str, repo: Path | None = None) -> dict:
     """Fetch an issue's VERBATIM title+body via gh (pre-fix source material).
-    issue_ref: OWNER/REPO#123 or #123 (repo inferred from session)."""
+    issue_ref: OWNER/REPO#123, or bare #123 with the repo inferred from the
+    session repository's github origin (V12 cold-start defect D2: help text
+    promised #123 but the bare form was rejected)."""
     import re as _re
     m = _re.fullmatch(r"(?:(\S+)/(\S+))?#(\d+)", issue_ref.strip())
     if not m:
         raise ValueError("issue ref must be OWNER/REPO#123 or #123")
     slug = "%s/%s" % (m.group(1), m.group(2)) if m.group(1) else None
     num = m.group(3)
+    if slug is None and repo is not None:
+        p = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"],
+                           capture_output=True, text=True, shell=False)
+        url = p.stdout.strip() if p.returncode == 0 else ""
+        mm = _re.search(r"github\.com[/:]([\w.\-]+)/([\w.\-]+?)(?:\.git)?$", url)
+        if mm:
+            slug = "%s/%s" % (mm.group(1), mm.group(2))
+    if slug is None:
+        raise ValueError("bare #N needs the session repo to have a github "
+                         "origin — or use OWNER/REPO#123")
     cmd = ["/usr/bin/env", "gh", "issue", "view", num, "--json",
-           "title,body,url,createdAt"]
-    if slug:
-        cmd += ["--repo", slug]
+           "title,body,url,createdAt", "--repo", slug]
     p = subprocess.run(cmd, capture_output=True, text=True, shell=False)
     if p.returncode != 0:
         raise ValueError("gh issue view failed: %s" % p.stderr.strip()[:200])
@@ -1296,7 +1333,7 @@ def cmd_investigate(repo: Path, args) -> int:
         return 2
     if getattr(args, "from_issue", None):
         try:
-            fetched = _fetch_issue_source(args.from_issue)
+            fetched = _fetch_issue_source(args.from_issue, repo)
         except ValueError as exc:
             print("error: %s" % exc, file=sys.stderr)
             return 2
@@ -1485,6 +1522,14 @@ def cmd_explain_blocker(repo: Path, args) -> int:
     nxt = STATES[idx + 1] if idx + 1 < len(STATES) else None
     if not nxt:
         print("state %s is terminal-adjacent; no next transition" % state)
+        return 0
+    if s.get("classification") in STOPPING:
+        # V12 D4: same contradiction as status — the gate WILL refuse
+        print("next transition: %s → %s" % (state, nxt))
+        print("BLOCKED  [%s] classification: %s is a stopping outcome — advance "
+              "is refused" % (nxt, s["classification"]))
+        print("  this is terminal: produce the final report (session report); "
+              "to reopen, reclassify via set-classification")
         return 0
     reqs = gate_requirements(nxt)
     gaps = []

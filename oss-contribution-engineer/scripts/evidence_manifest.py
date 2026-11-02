@@ -164,6 +164,44 @@ def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
     return 0 if entry["status"] == "PASS" else 1
 
 
+def cmd_record_void(repo: Path, entry_id: int, reason: str) -> int:
+    """V12 cold-start defect D5: a mistaken record (e.g. a reproduction that
+    failed for the WRONG reason) stayed active forever and flipped the final
+    Validation Report to FAILED. void marks an entry VOIDED — it stays in the
+    manifest (append-only history) but is excluded from conclusions, with the
+    human-visible reason."""
+    if not reason.strip():
+        print("error: a void needs --reason (visibility over silence)", file=sys.stderr)
+        return 2
+    manifest = evidence_root(repo) / "manifest.jsonl"
+    if not manifest.exists():
+        print("error: no evidence manifest at %s" % manifest, file=sys.stderr)
+        return 3
+    target = None
+    for line in manifest.read_text().splitlines():
+        if line.strip():
+            e = json.loads(line)
+            if e.get("id") == entry_id:
+                target = e
+    if target is None:
+        print("error: no entry #%d in the manifest" % entry_id, file=sys.stderr)
+        return 3
+    entry = {
+        "id": next_id(manifest),
+        "kind": "void",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "voids_entry": entry_id,
+        "voided_purpose": target.get("purpose", ""),
+        "reason": reason.strip(),
+        "executed": False,
+        "git_head": git_head(repo),
+    }
+    append(manifest, entry)
+    print("recorded #%d VOIDED entry #%d — %s (%s)"
+          % (entry["id"], entry_id, target.get("purpose", ""), reason.strip()))
+    return 0
+
+
 def cmd_record_skip(repo: Path, purpose: str, status: str, reason: str) -> int:
     if status not in ("SKIPPED", "UNAVAILABLE"):
         print("error: --status must be SKIPPED or UNAVAILABLE", file=sys.stderr)
@@ -263,6 +301,10 @@ def main() -> int:
     p_rec.add_argument("command", nargs=argparse.REMAINDER, help="command after '--'")
 
     p_skip = sub.add_parser("record-skip", help="record a non-execution explicitly")
+    p_void = sub.add_parser("void", help="mark a mistaken entry VOIDED (kept in "
+                                         "history, excluded from conclusions)")
+    p_void.add_argument("--id", type=int, required=True)
+    p_void.add_argument("--reason", required=True)
     p_skip.add_argument("--purpose", required=True)
     p_skip.add_argument("--status", required=True, choices=["SKIPPED", "UNAVAILABLE"])
     p_skip.add_argument("--reason", required=True)
@@ -286,6 +328,8 @@ def main() -> int:
                           cwd=args.cwd)
     if args.cmd == "record-skip":
         return cmd_record_skip(repo, args.purpose, args.status, args.reason)
+    if args.cmd == "void":
+        return cmd_record_void(repo, args.id, args.reason)
     if args.cmd == "show":
         return cmd_show(repo, args.markdown)
     if args.cmd == "verify":

@@ -83,10 +83,9 @@ New quotations are not collected; new mechanics land as gates and tests.
 These override convenience, and repository-local rules (discovered in recon) override
 them further where they conflict.
 
-1. **Evidence before claims.** Never assert a bug, a root cause, or a passing check
-   without something you actually ran or read. Static reading alone is a hypothesis, not
-   a bug report — and static suspicion alone never becomes an Issue: unproven findings
-   are reported as UNCONFIRMED INVESTIGATION or not reported at all.
+1. **Evidence before claims.** Never assert a bug, root cause, or passing check
+   without something you actually ran or read. Static suspicion alone never becomes
+   an Issue: unproven findings are UNCONFIRMED INVESTIGATION or not reported.
 2. **Never fabricate execution.** Record EXECUTED / PASS / FAIL / SKIPPED / UNAVAILABLE
    per command. "Tests pass" may only be written after the command ran and exited 0.
    Skipped work stays SKIPPED and is listed.
@@ -109,11 +108,10 @@ them further where they conflict.
    action, in this conversation. Everything published is a draft until then.
 9. **Security findings leave the public workflow.** Read the repository SECURITY policy
    and stop; private reporting only; no exploit details in public artifacts.
-10. **The human owns the submission.** Never add sign-offs/certifications (DCO) on
-    behalf of a human; never submit anything the human cannot personally explain and
-    defend; follow the repository's AI-disclosure policy. Never record that the human
-    understands a patch — understanding is confirmed by the human, or explicitly
-    deferred and recorded as deferred.
+10. **The human owns the submission.** No sign-offs/certifications (DCO) on a
+    human's behalf; never submit anything the human cannot personally explain and
+    defend; follow the repository's AI-disclosure policy. Understanding is confirmed
+    by the human, or explicitly deferred and recorded as deferred.
 11. **Local rules win.** CONTRIBUTING, AGENTS.md, CODEOWNERS, PR templates, commit
     conventions, and AI policies of the target repository override this skill's defaults.
 12. **Never load a large repository into context.** Understanding is hierarchical
@@ -140,8 +138,9 @@ never the goal; hypotheses live in `goal_compiler.py <repo> hypotheses ...` reco
 outside the immutable contract.
 
 Rules: `scope`/`domains`/`unknowns` are recorded as guesses; `done_when` needs at
-least one observable acceptance item (`run:`/`test`/`artifact`/`maintainer reply`) or
-the compiler rejects the contract; `remote_write` is never compiled in. The compiler
+least one observable acceptance item — a prefix `run:` / `test:` / `artifact:` /
+`maintainer:` / `output:` (colon or space form both accepted) — or the compiler
+rejects the contract; `remote_write` is never compiled in. The compiler
 emits the compact **Goal Card** (GOAL/DONE/SCOPE/UNKNOWN/NEXT/AUTH). Full spec:
 references/goal-contracts.md. After context compaction, reconstruct from the Task
 Cognition Receipt and open with `RESULT RECONSTRUCTED` — never recite memory.
@@ -165,9 +164,9 @@ Pick the mode from the user's request; say which mode you are in.
 Modes 2–4 are always READ_ONLY. Mode 3 ends at CANDIDATE; a patch requires the user to
 ask for Mode 5. Mode 9 analyzes review READ_ONLY, re-enters the patch path (Mode 5
 gates) only when a decided change requires code, and drafts responses — posting anything
-is REMOTE_WRITE. Also load references/contribution-doctrine.md once per repository to
-anchor judgment, and references/maintainer-etiquette.md before writing any comment or PR
-text. references/ai-assisted-development.md governs disclosure and ownership.
+is REMOTE_WRITE. Load references/contribution-doctrine.md once per repository;
+references/maintainer-etiquette.md before any comment/PR text;
+references/ai-assisted-development.md governs disclosure.
 
 ## Contribution state machine
 
@@ -234,7 +233,10 @@ CHANGES_REQUESTED vs READY_FOR_REREVIEW differ by *evidence of the contributor's
 actions*: fixes pushed, and readiness explicitly signaled. Inactivity, rejection,
 supersession, withdrawal and merge are different outcomes — Kubernetes closes 90-day
 idle PRs, Git discards topics with unaddressed comments after four weeks, and none of
-those is a merge.
+those is a merge. Related ops (all `--by-user`-gated): `accept-review-change`
+(re-enters the patch path with revalidation debt), `record-remote-action --grant-id
+… --resulting OWNER/REPO#N` (receipts a performed remote action), and
+`acknowledge-scope-finding --reason …` (human signs off a scope finding).
 
 ## Contributor understanding (CONTRIBUTOR_UNDERSTANDING)
 
@@ -259,24 +261,24 @@ the outcome as UNDERSTOOD (only on explicit human confirmation), DEFERRED, or IN
 
 ## Repository recon (always first)
 
-Run `repo_audit.py .` and `contribution_rules_scan.py .` from the repository root
-(or the one-op `read-rules`, which records both the RULES_DISCOVERED manifest and
-the full-read receipt).
+Run `repo_audit.py . --json` (output is gate-ready: carries `repository_id`,
+`base_sha`, and `digest`) and `contribution_rules_scan.py .` from the repository
+root (or the one-op `read-rules`, which records both the RULES_DISCOVERED
+manifest and the full-read receipt).
 
 Then read the files they surface (CONTRIBUTING, AGENTS.md, CLAUDE.md, SECURITY,
 CODEOWNERS, PR/issue templates, CI configs) and produce the Repository Contribution
-Profile using assets/repository-recon-report.md. Confirm build/test commands by reading
-the manifests they point to, not by guessing. Production edits start only after the
-profile exists. Full method: references/repository-recon.md.
+Profile using assets/repository-recon-report.md. Confirm build/test commands from
+the manifests they point to, never by guessing. Production edits start only after
+the profile exists (references/repository-recon.md).
 
 ## Adaptive Repository Context Acquisition
 
 Never load a large repository into context. The law: **cognition selects, source
 proves, tests verify, history explains.** Understanding is hierarchical (L0 project →
 L1 subsystem → L2 component → L3 object → L4 current source); a task starts at L0/L1
-and descends only through relevant areas.
-
-The `investigate` op does all of this; the internals, for reference:
+and descends only through relevant areas. The `investigate` op does all of this;
+the internals, for reference:
 
 1. **Backend** (from recon, automatic + visible in investigate output): AOCI runtime
    receipt when a COMPLETE cognition session exists; AOCI_FILE when `aoci.*.txt`
@@ -309,8 +311,11 @@ context-packing.md; evaluation: references/retrieval-evaluation.md.
 Record every consequential command through the session `evidence` op (or the underlying
 `evidence_manifest.py record`) so results cannot be hand-written: `--expect-fail` marks
 RED proofs, `--head-bound` ties GREEN/suites to the HEAD they ran on, `--cwd` pins the
-working directory, `record-skip` records SKIPPED/UNAVAILABLE with a reason;
-`validation_report.py` renders the Validation Report table.
+working directory (recorded, but NOT a PYTHONPATH — repro scripts must insert the repo
+into their own `sys.path`), `record-skip` records SKIPPED/UNAVAILABLE with a reason;
+`validation_report.py` renders the Validation Report table. A mistaken entry (e.g. a
+reproduction that failed for the WRONG reason) is marked `evidence_manifest.py void
+--id N --reason …` — it stays in history but stops counting toward the conclusion.
 
 `--expect-fail` marks RED proofs: a non-zero exit is the expected outcome and is not
 counted as a validation failure, while an unexpected exit 0 is recorded FAIL (the proof
@@ -380,11 +385,10 @@ Method: references/patch-design.md (§ diff budget, § scope audit).
 ### Strategy A — existing issue (Mode 2 → 4 → 5)
 
 1. Recon (above).
-2. Triage the issue: body, labels, assignees, comments, linked PRs, PRs referencing the
-   number, author branches, recent commits in the area, maintainer responses, duplicate
-   and closed prior attempts. Collect with `scripts/duplicate_work_scan.py` — it prints
-   the exact `gh` capture commands, then aggregates the captured JSON (a platform GitHub
-   tool may substitute; record which tool captured the data).
+2. Triage the issue: body, labels, assignees, comments, linked PRs, author branches,
+   recent commits in the area, maintainer responses, duplicate/closed attempts.
+   `duplicate_work_scan.py` prints the exact `gh` capture commands, then aggregates
+   the captured JSON (a platform tool may substitute; record which).
 3. Classify per the DEDUPLICATE gate. If not GOOD_CANDIDATE/AVAILABLE → report and stop.
 4. Investigation Only on the reported behavior: reproduce or disprove (Mode 4).
 5. If confirmed and the user asks for a fix: Fix path (below) from RED onward.
@@ -414,17 +418,14 @@ assets/review-report.md from the adversarial pass. Prepare, never publish, the P
 
 A published PR receiving review comments does not end the run. Classify each concern
 (correctness, design, scope, test coverage, compatibility, style, documentation,
-maintainability, question), inspect the relevant source and evidence, then explain it to
-the contributor with the 5-part review block — the contributor must understand the
-assessment before any upstream reply is drafted. Then either modify (re-enter PATCH;
-affected head-bound evidence is STALE and must be re-run and re-recorded) or prepare a
-respectful evidence-backed response — never automatic agreement, and never a blind
-rewrite: a design objection is resolved in discussion first (Git: defend or adapt the
-design before re-implementing). Push fixes as new commits (not squashed) so reviewers
-can diff the revision; signal readiness explicitly (re-request / PTAL) for
-READY_FOR_REREVIEW; classify the terminal outcome with upstream_state.py — MERGED is the
-only success. Full protocol: references/review-response.md; worksheet:
-assets/review-response.md.
+maintainability, question), inspect the relevant source and evidence, then explain it
+to the contributor with the 5-part review block before any upstream reply is drafted.
+Then either modify (re-enter PATCH; affected head-bound evidence is STALE and must be
+re-run) or prepare a respectful evidence-backed response — never automatic agreement,
+and never a blind rewrite: a design objection is resolved in discussion first. Push
+fixes as new commits (not squashed); signal readiness explicitly (re-request / PTAL);
+classify the terminal outcome with upstream_state.py — MERGED is the only success.
+Full protocol: references/review-response.md; worksheet: assets/review-response.md.
 
 ## Output artifacts
 
@@ -441,8 +442,8 @@ assets/review-response.md.
 | PR Draft | assets/pull-request-template.md | PR_READY |
 | Review Response + Iteration Summary | assets/review-response.md | IN_REVIEW, once per revision |
 
-Investigation Reports end with exactly one conclusion: CONFIRMED, UNCONFIRMED, INVALID,
-ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
+Investigation Reports end with exactly one conclusion: CONFIRMED, UNCONFIRMED,
+INVALID, ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 
 ## Script index
 

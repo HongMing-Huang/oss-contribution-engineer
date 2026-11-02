@@ -30,7 +30,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-OBSERVABLE_PREFIXES = ("run:", "test ", "test:", "artifact ", "maintainer ", "output ")
+# V12 cold-start defect D3: agents write "artifact:" with a colon (matching
+# the "run:" example); accept the colon form of every prefix
+OBSERVABLE_PREFIXES = ("run:", "test ", "test:", "artifact ", "artifact:",
+                       "maintainer ", "maintainer:", "output ", "output:")
 CONTRACT_VERSION = 1
 
 

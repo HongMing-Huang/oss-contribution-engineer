@@ -18,6 +18,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -187,6 +188,22 @@ def _git_head(repo: Path) -> str | None:
     return p.stdout.strip() if p.returncode == 0 else None
 
 
+def _repository_identity(repo: Path) -> str:
+    """Canonical identity: origin slug (OWNER/REPO), matching
+    contribution_session.repository_identity so gate binding accepts this
+    artifact on first record."""
+    p = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"],
+                       capture_output=True, text=True, shell=False)
+    url = p.stdout.strip() if p.returncode == 0 else ""
+    m = re.search(r"github\.com[/:]([\w.\-]+)/([\w.\-]+?)(?:\.git)?$", url)
+    if m:
+        return "%s/%s" % (m.group(1), m.group(2))
+    return repo.name
+    p = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                       capture_output=True, text=True, shell=False)
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
 def audit(repo: Path, max_depth: int) -> dict:
     files = list(walk_files(repo, max_depth))
     findings: dict[str, dict[str, set[str]]] = {}
@@ -217,6 +234,10 @@ def audit(repo: Path, max_depth: int) -> dict:
         "type": "REPOSITORY_RECON",
         "schema_version": 1,
         "repository": str(repo),
+        # V12 cold-start defect D1: gate binding needs the canonical identity
+        # (origin slug) — a bare filesystem path made `record --kind recon`
+        # reject this artifact ("wrong-repository replay") every time.
+        "repository_id": _repository_identity(repo),
         "base_sha": _git_head(repo),
         "generated_by": "repo_audit.py",
         "created_at": datetime.now(timezone.utc).isoformat(),

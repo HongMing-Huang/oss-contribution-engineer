@@ -62,6 +62,18 @@ def load_entries(repo: Path) -> list[dict]:
 def build_report(entries: list[dict], head: str | None = None) -> dict:
     rows = []
     stale_heads = set()
+    # V12 D5: entries voided by a later `void` record are excluded from the
+    # active table (a note row keeps the voiding visible — history is not
+    # rewritten, conclusions stop counting mistakes)
+    voided = {e["voids_entry"]: e for e in entries if e.get("kind") == "void"}
+    if voided:
+        for vid, ve in sorted(voided.items()):
+            rows.append({"command": "(voided #%d)" % vid,
+                         "purpose": ve.get("voided_purpose", ""),
+                         "executed": True,   # a bookkeeping row, not a skipped step
+                         "result": "VOIDED",
+                         "counted_result": "VOIDED",
+                         "evidence": "voided: %s" % ve.get("reason", "")})
     # head-bound PASS records that cover the CURRENT head — proof the current code
     # state has been validated. Older head-bound records covered by a newer rerun at
     # the current head are SUPERSEDED (visible history, not active evidence); only a
@@ -69,40 +81,12 @@ def build_report(entries: list[dict], head: str | None = None) -> dict:
     covering_ids = sorted(e["id"] for e in entries
                           if e["kind"] == "execution" and e["status"] == "PASS"
                           and e.get("head_bound") and head is not None
-                          and e.get("git_head") == head)
+                          and e.get("git_head") == head
+                          and e["id"] not in voided)
     for e in entries:
-        if e["kind"] == "execution":
-            expected_fail = bool(e.get("expected_failure"))
-            if e["status"] == "FAIL" and expected_fail:
-                shown = "FAIL (unexpected — proof did not hold)"
-            elif e["status"] == "PASS" and expected_fail:
-                shown = "PASS (expected failure — RED proof)"
-            else:
-                shown = e["status"]
-            counted = e["status"]
-            if (e["status"] == "PASS" and e.get("head_bound")
-                    and head is not None and e.get("git_head")
-                    and e["git_head"] != head):
-                later_cover = [i for i in covering_ids if i > e["id"]]
-                if later_cover:
-                    counted = "SUPERSEDED"
-                    shown = "SUPERSEDED (rerun as #%d at current HEAD)" % later_cover[0]
-                else:
-                    stale_heads.add(e["git_head"])
-                    counted = "STALE"
-                    shown = "STALE (recorded at %s; current HEAD %s)" % (
-                        e["git_head"][:12], head[:12])
-            rows.append({
-                "command": shlex.join(e["command"]),
-                "purpose": e["purpose"],
-                "executed": True,
-                "result": shown,
-                "counted_result": counted,
-                "evidence": "%s (sha256 %s, exit %s, head %s)" % (
-                    e["artifact"], e["artifact_sha256"][:12], e["exit_code"],
-                    (e.get("git_head") or "n/a")[:12]),
-            })
-        else:
+        if e["kind"] == "void" or (e["kind"] == "execution" and e["id"] in voided):
+            continue  # void rows rendered above; voided rows replaced by note
+        if e["kind"] != "execution":
             rows.append({
                 "command": "(not executed)",
                 "purpose": e["purpose"],
@@ -111,6 +95,37 @@ def build_report(entries: list[dict], head: str | None = None) -> dict:
                 "counted_result": e["status"],
                 "evidence": "reason: %s" % e.get("reason", ""),
             })
+            continue
+        expected_fail = bool(e.get("expected_failure"))
+        if e["status"] == "FAIL" and expected_fail:
+            shown = "FAIL (unexpected — proof did not hold)"
+        elif e["status"] == "PASS" and expected_fail:
+            shown = "PASS (expected failure — RED proof)"
+        else:
+            shown = e["status"]
+        counted = e["status"]
+        if (e["status"] == "PASS" and e.get("head_bound")
+                and head is not None and e.get("git_head")
+                and e["git_head"] != head):
+            later_cover = [i for i in covering_ids if i > e["id"]]
+            if later_cover:
+                counted = "SUPERSEDED"
+                shown = "SUPERSEDED (rerun as #%d at current HEAD)" % later_cover[0]
+            else:
+                stale_heads.add(e["git_head"])
+                counted = "STALE"
+                shown = "STALE (recorded at %s; current HEAD %s)" % (
+                    e["git_head"][:12], head[:12])
+        rows.append({
+            "command": shlex.join(e["command"]),
+            "purpose": e["purpose"],
+            "executed": True,
+            "result": shown,
+            "counted_result": counted,
+            "evidence": "%s (sha256 %s, exit %s, head %s)" % (
+                e["artifact"], e["artifact_sha256"][:12], e["exit_code"],
+                (e.get("git_head") or "n/a")[:12]),
+        })
     # expected failures (RED proofs) are evidence, not validation failures
     fails = sum(1 for r in rows if r["counted_result"] == "FAIL")
     unexecuted = sum(1 for r in rows if not r["executed"])

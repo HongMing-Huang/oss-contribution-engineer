@@ -3,7 +3,13 @@
   "updated": "2026-10-07 (skill integration; maturity independent of V numbers)",
   "rule": "README and SKILL.md derive their claims from this file. ADVISORY must never be described as ENFORCED. Every ENFORCED entry cites automated tests (tests/<file>.py#<test-id>); a claim without executable evidence is downgraded.",
   "maturity": {
-    "scale": ["RESEARCHED", "IMPLEMENTED", "INTEGRATED", "REAL_BACKEND_VALIDATED", "REAL_TASK_VALIDATED"],
+    "scale": [
+      "RESEARCHED",
+      "IMPLEMENTED",
+      "INTEGRATED",
+      "REAL_BACKEND_VALIDATED",
+      "REAL_TASK_VALIDATED"
+    ],
     "note": "maturity is tracked per capability area and is independent of experiment labels (V8/V9/V10 are history under dev/ only).",
     "levels": {
       "contribution_session_state_machine": "REAL_TASK_VALIDATED (real-repo PATCH_READY and NO_PATCH runs)",
@@ -11,7 +17,7 @@
       "session_workflow_investigate_note_read_source_resume_report": "REAL_TASK_VALIDATED (two independent real-repo PATCH_READY runs driven solely through the session surface: click-3805 and requests-7502; see dev/v10/EXPERIMENT-LEDGER.md)",
       "aoci_runtime_client": "REAL_BACKEND_VALIDATED (contract-conformant service; official upstream runtime still unproven)",
       "two_stage_localization": "REAL_TASK_VALIDATED (blind-task comparison led to simplification: expansion removed from default)",
-      "experiment_history": "V8/V9/V10 are labels of experiment rounds under dev/ only — they carry no maturity meaning"
+      "experiment_history": "V8/V9/V10 are labels of experiment rounds under dev/ only \u2014 they carry no maturity meaning"
     }
   },
   "capabilities": {
@@ -54,7 +60,7 @@
     },
     "retrieval_routing": {
       "status": "IMPLEMENTED",
-      "evidence": "ROUTING_POLICIES per workflow; --signals override recorded as ablation; priors validated via ROUTING REGRET, not assumed. V8 profile-driven latency work on real repos (django 6956 files): tests_of full-rescan (88M regex searches ≈100s) replaced by precomputed test-file list + stem memo; PageRank edge totals hoisted out of the iteration loop — route 181s→35s with identical top-3 ranking (failure record F7, oss-contribution-engineer-dev/v8/EXPERIMENT-LEDGER.md); router_cache.py provides an opt-in warm-corpus path with byte-identical recall (arm W)"
+      "evidence": "ROUTING_POLICIES per workflow; --signals override recorded as ablation; priors validated via ROUTING REGRET, not assumed. V8 profile-driven latency work on real repos (django 6956 files): tests_of full-rescan (88M regex searches \u2248100s) replaced by precomputed test-file list + stem memo; PageRank edge totals hoisted out of the iteration loop \u2014 route 181s\u219235s with identical top-3 ranking (failure record F7, oss-contribution-engineer-dev/v8/EXPERIMENT-LEDGER.md); router_cache.py provides an opt-in warm-corpus path with byte-identical recall (arm W)"
     },
     "no_regret_packing": {
       "status": "IMPLEMENTED",
@@ -108,10 +114,10 @@
     "contributor_understanding": {
       "status": "IMPLEMENTED",
       "tests": [
-        "tests/test_session_runtime.py#test_in_review_requires_understood",
-        "tests/test_black_box_lifecycle.py#test_deferred_cannot_reach_in_review"
+        "tests/test_black_box_lifecycle.py#test_happy_path_to_pr_ready",
+        "tests/test_v52_holes.py#test_d_scope_conclusion_cannot_be_relabelled"
       ],
-      "evidence": "UNDERSTOOD requires --confirmed-by (human); DEFERRED/INCOMPLETE cannot reach IN_REVIEW. Whether the human truly understands remains human judgment"
+      "evidence": "set-understanding requires --confirmed-by (human); UNDERSTOOD is a prerequisite gate for REVIEW/PR_READY \u2014 exercised end-to-end by the happy-path lifecycle test and at the REVIEW gate with DEFERRED state in test_v52_holes; runtime never self-confirms"
     },
     "upstream_lifecycle": {
       "status": "IMPLEMENTED",
@@ -127,7 +133,7 @@
     },
     "aoci_file_compatibility": {
       "status": "IMPLEMENTED",
-      "evidence": "retrieval_router parses aoci.*.txt FRAS volumes read-only with sampled baseline alignment check; degrades to unverified honestly; this is the explicit FALLBACK path when no runtime session exists — never described as the AOCI runtime"
+      "evidence": "retrieval_router parses aoci.*.txt FRAS volumes read-only with sampled baseline alignment check; degrades to unverified honestly; this is the explicit FALLBACK path when no runtime session exists \u2014 never described as the AOCI runtime"
     },
     "aoci_runtime_integration": {
       "status": "ENFORCED",
@@ -136,7 +142,7 @@
         "tests/test_v6_backends.py#test_aoci_identity_drift_invalidates_receipt",
         "tests/test_v6_backends.py#test_router_consumes_backend_provenance"
       ],
-      "evidence": "scripts/aoci_runtime.py drives the real runtime contract over MCP stdio (pinned 9-tool surface digest, aoci_rules → whole-index cursor chain → attestation + host confirmation → receipt); partial overview stays PARTIAL and search stays gated; identity/generation drift rewrites the receipt INVALIDATED_DRIFT; router upgrades to AOCI_RUNTIME only on a COMPLETE receipt. Integration run: oss-contribution-engineer-dev/runs/v6-backend-integration-runs.json (backend disclosed as aoci-contract-compatible:aoci-conformance — the official aoci-code binary is not bundled in this environment)"
+      "evidence": "scripts/aoci_runtime.py drives the real runtime contract over MCP stdio (pinned 9-tool surface digest, aoci_rules \u2192 whole-index cursor chain \u2192 attestation + host confirmation \u2192 receipt); partial overview stays PARTIAL and search stays gated; identity/generation drift rewrites the receipt INVALIDATED_DRIFT; router upgrades to AOCI_RUNTIME only on a COMPLETE receipt. Integration run: oss-contribution-engineer-dev/runs/v6-backend-integration-runs.json (backend disclosed as aoci-contract-compatible:aoci-conformance \u2014 the official aoci-code binary is not bundled in this environment)"
     },
     "mcp_stdio_transport": {
       "status": "IMPLEMENTED",
@@ -149,7 +155,7 @@
         "tests/test_v6_backends.py#test_source_digest_drift_detected",
         "tests/test_v6_backends.py#test_fallback_when_external_backend_unavailable"
       ],
-      "evidence": "scripts/symbol_backend.py: find_symbol/find_references/symbol_span/file_symbols over CPython ast; V9 ran the REAL serena-agent LSP on Go (gin) and TypeScript (vite) with resolved cross-file references (dev/v9/runs/serena-runs.jsonl) (exact lineno/end_lineno spans, Name/Attribute Load references, ClassDef.bases inheritance — no regex); every row carries path/symbol/kind/start_line/end_line/source_digest/relation/backend; verify() flags CURRENT/CHANGED/DELETED; Serena/LSP adapter activates only when SERENA_MCP_COMMAND is configured and falls back with a named reason"
+      "evidence": "scripts/symbol_backend.py: find_symbol/find_references/symbol_span/file_symbols over CPython ast; V9 ran the REAL serena-agent LSP on Go (gin) and TypeScript (vite) with resolved cross-file references (dev/v9/runs/serena-runs.jsonl) (exact lineno/end_lineno spans, Name/Attribute Load references, ClassDef.bases inheritance \u2014 no regex); every row carries path/symbol/kind/start_line/end_line/source_digest/relation/backend; verify() flags CURRENT/CHANGED/DELETED; Serena/LSP adapter activates only when SERENA_MCP_COMMAND is configured and falls back with a named reason"
     },
     "graph_imports": {
       "status": "IMPLEMENTED",
@@ -177,7 +183,7 @@
       "tests": [
         "tests/test_v7_graph_localization.py#test_two_stage_sufficient_and_no_evidence_exits"
       ],
-      "evidence": "localize_two_stage.py: stage 1 router breadth (direct-first shortlist), stage 2 definition matching inside the shortlist. V9: exits renamed to correctness-neutral STOPPED_EVIDENCE_FOUND/STOPPED_BUDGET/STOPPED_NO_EVIDENCE each carrying a structured stop_evidence record; the neighbor-hop expansion was REMOVED from the default path after the blind-task comparison showed zero exact-match benefit (D≡D1 task-for-task, dev/v9/runs/v9-r1.jsonl) — old behavior behind expand=True. NOT the CoSIL agent loop"
+      "evidence": "localize_two_stage.py: stage 1 router breadth (direct-first shortlist), stage 2 definition matching inside the shortlist. V9: exits renamed to correctness-neutral STOPPED_EVIDENCE_FOUND/STOPPED_BUDGET/STOPPED_NO_EVIDENCE each carrying a structured stop_evidence record; the neighbor-hop expansion was REMOVED from the default path after the blind-task comparison showed zero exact-match benefit (D\u2261D1 task-for-task, dev/v9/runs/v9-r1.jsonl) \u2014 old behavior behind expand=True. NOT the CoSIL agent loop"
     },
     "autocoderover_style_search_api": {
       "status": "ENFORCED",
@@ -304,7 +310,7 @@
       "tests": [
         "tests/test_capability_claims.py#test_all_capabilities_use_known_status_values"
       ],
-      "evidence": "doctrine represented as engineering lenses; frozen V5.3 — new quotations only when exposing a missing rule"
+      "evidence": "doctrine represented as engineering lenses; frozen V5.3 \u2014 new quotations only when exposing a missing rule"
     }
   }
 }
