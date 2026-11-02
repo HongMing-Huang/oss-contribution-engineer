@@ -3,6 +3,24 @@
 This skill produces AI-assisted contributions. Mature projects have converged on rules
 for this; violating them gets submissions rejected without review.
 
+## The 2025–26 "AI slop" wave (grounding, not decoration)
+
+The dominant community complaint is **cost asymmetry**: AI made generating
+submissions nearly free while human review stayed expensive. curl found ~20% of
+its security reports were AI-generated false positives and retired its $90K bug
+bounty over it ([curl AI guidelines, May 2025](https://curl.se/mail/lib-2025-05/0013.html));
+Godot and ITK maintainers reported being overwhelmed by low-quality AI PRs; OCaml
+maintainers rejected a 13,000-file AI PR outright; GitHub began prototyping
+maintainer-side controls against slop volume (Feb 2026). The kernel's position
+(Torvalds, 2026): AI-assisted code is fine when it clears the quality bar, "slop"
+is rejected, and the human takes responsibility. The rules below exist so that a
+run of this skill is on the right side of every one of those lines.
+
+**Serial-contribution rule (the missing rule the slop wave exposed):** one open
+contribution at a time per project, resolved or closed before the next opens; and
+never generate submission volume the human cannot personally review end-to-end
+before authorizing. A flood of individually-acceptable PRs is still slop.
+
 ## Ownership
 
 - The **human contributor owns the submission** — every line, every claim, every test.
@@ -38,6 +56,11 @@ for this; violating them gets submissions rejected without review.
   `Assisted-by: LLM` tag plus disclosure of tools, prompts (or summaries), affected
   parts, and how it was tested. Other projects may ban AI contributions outright —
   then the answer is to stop and tell the user.
+- **Bug/security reports must be "security informed"** (curl's term): the submitter
+  must actually understand the issue they report. An AI-suggested vulnerability the
+  human cannot explain — reproducer, impact, affected path — is not reported. This is
+  the exact failure mode that flooded curl: reports about code the submitter never
+  read. The Explain-Back check applies to upstream REPORTS, not just patches.
 - When the policy is silent, offer a brief, honest note about AI assistance in the PR
   description and let the human decide whether to keep it. Never claim the work is
   entirely human when it was not.

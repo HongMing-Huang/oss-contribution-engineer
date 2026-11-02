@@ -114,10 +114,13 @@ them further where they conflict.
     by the human, or explicitly deferred and recorded as deferred.
 11. **Local rules win.** CONTRIBUTING, AGENTS.md, CODEOWNERS, PR templates, commit
     conventions, and AI policies of the target repository override this skill's defaults.
-12. **Never load a large repository into context.** Understanding is hierarchical
-    (L0–L4) and acquired adaptively: cognition selects, source proves, tests verify,
-    history explains. No summary, embedding, graph, or memory substitutes for reading
-    the current source of anything you will modify.
+12. **Never load a large repository into context.** Cognition selects, source
+    proves, tests verify, history explains; no summary or memory substitutes for
+    reading the current source of anything you will modify.
+13. **One open contribution at a time; never mass-submit.** AI makes generating
+    submissions nearly free while review stays expensive — a flood of individually
+    acceptable PRs is still slop (curl/Godot/OCaml 2025–26). Close one before
+    opening the next; never generate volume the human cannot review end-to-end.
 
 ## Permission model
 
