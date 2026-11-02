@@ -5,6 +5,7 @@ license: MIT
 compatibility: Requires python3 and git on PATH. Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
 metadata:
   version: "2.0.0"
+  author: "HongMing-Huang"
   philosophy: "AI may accelerate investigation, testing, implementation, and review, but it must never replace evidence, engineering judgment, or human responsibility."
   context_law: "Cognition selects. Source proves. Tests verify. History explains."
 ---
