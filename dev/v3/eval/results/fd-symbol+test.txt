@@ -1,1 +1,0 @@
-symbol+test      MRR=0.333 R@5=0.625 BCY@8k=0.000

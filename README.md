@@ -120,6 +120,12 @@ Each transition has entry/exit gates (see `SKILL.md`). A gate failure is a succe
 outcome of the skill: INVALID, ALREADY_FIXED, DUPLICATE, UNCONFIRMED, DESIGN_QUESTION,
 TOO_LARGE — each is a conclusion with evidence, not a failure to produce a patch.
 
+## Development history
+
+Experiment ledgers (V3–V12), benchmark runs, blind validations, and design-review
+records live in the private companion repo:
+[HongMing-Huang/oss-contribution-engineer-dev](https://github.com/HongMing-Huang/oss-contribution-engineer-dev)
+
 ## Project maturity (read this before any version number)
 
 Version numbers (V6, V7, V8, …) are **experimental iteration labels**, not maturity.
@@ -130,7 +136,7 @@ Maturity is tracked on this ladder and the project currently sits at **EXPERIMEN
 
 V8 ran the pipeline against real repositories and frozen tasks with competent
 baselines and ablations; the results (including negative ones) live in
-`oss-contribution-engineer-dev/v8/EXPERIMENT-LEDGER.md`. Nothing in this README is
+`the companion dev repo (link above)`. Nothing in this README is
 a claim of usability, production-readiness, or feature-completeness.
 
 ## Runtime and capability status

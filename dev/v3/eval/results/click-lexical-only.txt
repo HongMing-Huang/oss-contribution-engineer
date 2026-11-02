@@ -1,1 +1,0 @@
-lexical-only     MRR=0.625 R@5=0.875 BCY@8k=0.875
