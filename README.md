@@ -24,7 +24,11 @@ engineering-practices guides — paraphrased with sources in
 
 ## Install
 
-Copy the folder to any skills-compatible agent's skill directory:
+```bash
+npx skills add https://github.com/HongMing-Huang/oss-contribution-engineer
+```
+
+Or manually — copy this folder to any skills-compatible agent's skill directory:
 
 | Scope | Path |
 |-------|------|
@@ -32,8 +36,18 @@ Copy the folder to any skills-compatible agent's skill directory:
 | user (any agent) | `~/.agents/skills/oss-contribution-engineer/` |
 | Claude Code | `~/.claude/skills/oss-contribution-engineer/` |
 
-Requires `python3` and `git` on PATH. Optional: an authenticated `gh` CLI or a platform
-GitHub tool for issue/PR lookups. See `references/ecosystem-guides.md` for per-agent notes.
+### First run
+
+```bash
+python3 <SKILL_DIR>/scripts/doctor.py
+```
+
+Checks Python ≥3.10, git, gh CLI (critical) and optional LSP backends
+(Serena, gopls, typescript-language-server). The skill works without the
+optional ones — they add symbol-level localization for non-Python repos.
+
+Requires `python3` and `git` on PATH. Optional: authenticated `gh` CLI for
+`--from-issue` and dedupe captures. See `references/ecosystem-guides.md`.
 
 ## Workflows
 

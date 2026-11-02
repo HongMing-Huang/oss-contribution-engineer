@@ -1,6 +1,6 @@
 ---
 name: oss-contribution-engineer
-description: Drive real, maintainer-respectful open-source contributions with a coding agent - repository recon, issue triage, bug hunting, evidence-first investigation, RED-to-GREEN regression fixes, adversarial review, PR preparation, review-response support - scaled to large codebases via goal contracts, hybrid retrieval routing, and bounded context packs instead of loading the whole repository. Use when the user wants to contribute to an open-source repo, find a real issue, check whether an issue is already claimed, investigate a bug before coding, find an unreported bug, review a patch like a maintainer, prepare a high-quality PR, respond to PR review, or work in a large codebase - or mentions "good first issue", "contribute upstream", "fix this open-source bug", or "the maintainer asked for changes". Enforces evidence before claims and reproduction before fixes; never treats "investigate" as permission to edit; never publishes remotely without authorization. Not for ordinary local application development.
+description: Drive real, maintainer-respectful open-source contributions with a coding agent - repository recon, issue triage, bug hunting, evidence-first investigation, RED-to-GREEN regression fixes, adversarial review, PR preparation, review-response support - scaled to large codebases via goal contracts, hybrid retrieval routing, and bounded context packs instead of loading the whole repository. Use when the user wants to contribute to an open-source repo, find a real issue, check whether an issue is already claimed, investigate a bug before coding, find an unreported bug, review a patch like a maintainer, prepare a high-quality PR, respond to PR review, or work in a large codebase - or mentions "good first issue", "contribute upstream", "fix this open-source bug", or "the maintainer asked for changes". 中文触发：贡献开源、提 PR、上游 PR、调查 issue、修复开源 bug、大仓库贡献。Not for ordinary local app dev.
 license: MIT
 compatibility: Requires python3 and git on PATH. Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
 metadata:
@@ -30,8 +30,10 @@ you should never need to call `retrieval_router.py`, `localize_two_stage.py`,
 directly; those are implementation modules behind this surface.
 
 ```bash
-S=python3 <skill-dir>/scripts/contribution_session.py
+S=python3 <SKILL_DIR>/scripts/contribution_session.py
 
+python3 <SKILL_DIR>/scripts/doctor.py
+    # first-run check: python3/git/gh (critical) + LSP backends (optional)
 $S <repo> investigate --from-issue 123 [--task-type stack_trace]
     # fetches the issue's verbatim title+body via gh as the blind task source
 $S <repo> investigate --task-text "<the task, verbatim>" [--task-type bug_report|stack_trace|review_comment|test_failure|edit_impact|explore|issue2code]
@@ -53,23 +55,17 @@ $S <repo> report              # project session evidence into walkthrough / root
                               # understanding-prompts / issue-draft
 ```
 
-A run ends in NO_PATCH (classification via `set-classification`) or PATCH_READY;
-both are first-class outcomes. The runtime persists one session record
-(`.oss-contrib-evidence/session.json`) and **refuses illegal operations with a
-non-zero exit** — no state advance, no production edit, no PR_READY without the
-machine evidence the gates require; stale head-bound validation mechanically
-blocks advancement. Start with `init --task-id <id> --goal <contract.json>`;
-`status` shows state + gate gaps + the legal next transition; `advance --to
-<STATE>` moves when gates pass.
+A run ends in NO_PATCH or PATCH_READY; both are first-class outcomes. The
+runtime persists one session record and **refuses illegal operations with a
+non-zero exit** — no advance, no edit, no PR_READY without machine evidence.
+Start with `init --task-id <id> --goal <contract.json>`; `status` shows state
++ gate gaps; `advance --to <STATE>` moves when gates pass.
 
-Other commands: `set-authority` (grants REQUIRE --by-user + --evidence-ref),
-`record` (recon/dedupe/walkthrough/scope-audit/patch-intent/plan/pack/receipt),
+Other commands: `set-authority` (REQUIREs --by-user + --evidence-ref), `record`,
 `set-classification`, `set-understanding`, `upstream --pr-json`, `reconstruct`.
 Capability claims are classified in `CAPABILITIES.json` — never describe ADVISORY
-behavior as ENFORCED. **Where human judgment remains required** (the runtime cannot
-decide these): reading repo-local rules and judging conflicts, judging whether a bug
-is real, choosing among routing/patching strategies, contributor-understanding
-conversations, anything REMOTE_WRITE, and any security finding.
+as ENFORCED. **Human judgment stays required for**: judging whether a bug is real,
+contributor-understanding conversations, anything REMOTE_WRITE, and security findings.
 
 ## Doctrine (frozen)
 
@@ -376,7 +372,7 @@ DURING REVIEW   REVIEWER CONCERN: <paraphrased, categorized — what worries the
 Before any PR preparation:
 
 ```bash
-python3 <skill-dir>/scripts/diff_scope_check.py <repo> --base <base-ref> --intended <files...>
+python3 <SKILL_DIR>/scripts/diff_scope_check.py <repo> --base <base-ref> --intended <files...>
 ```
 
 Diff budget heuristic for small fixes: 1–5 production files, 1–3 test files, 0 new
