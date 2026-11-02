@@ -14,11 +14,9 @@ jobs:
           python-version: "3.12"
       - name: Compile all scripts
         run: |
-          cd oss-contribution-engineer/scripts
+          cd scripts
           for f in *.py; do python3 -m py_compile "$f"; done
       - name: Install pytest
         run: python3 -m pip install --quiet pytest
       - name: Run test suite (incl. capability-claim validation)
-        run: |
-          cd oss-contribution-engineer
-          python3 -m pytest tests/ -q
+        run: python3 -m pytest tests/ -q
