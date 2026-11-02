@@ -32,7 +32,7 @@ directly; those are implementation modules behind this surface.
 ```bash
 S=python3 <SKILL_DIR>/scripts/contribution_session.py
 
-python3 <SKILL_DIR>/scripts/doctor.py
+python3 <SKILL_DIR>/scripts/envcheck.py
     # first-run check: python3/git/gh (critical) + LSP backends (optional)
 $S <repo> investigate --from-issue 123 [--task-type stack_trace]
     # fetches the issue's verbatim title+body via gh as the blind task source
