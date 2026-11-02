@@ -168,3 +168,30 @@ def test_from_issue_ref_parser_rejects_malformed(repo):
            "--from-issue", "not-an-issue-ref")
     assert r.returncode == 2
     assert "OWNER/REPO#123" in r.stderr
+
+
+def test_test_file_hits_ranked_below_production(repo):
+    # V11 backlog #2: same-named TEST helpers must not masquerade as the root
+    # cause — production hits first, test hits tagged as corroborating evidence
+    (repo / "tests").mkdir(exist_ok=True)
+    (repo / "tests" / "test_alpha.py").write_text(
+        "from src.alpha import alpha\n\n\ndef alpha():\n    return 1\n")
+    r = py(str(SESSION), str(repo), "investigate",
+           "--task-text", "alpha calls base_value")
+    assert r.returncode == 0, r.stderr
+    st = json.loads((repo / ".oss-contrib-evidence" / "investigation.json").read_text())
+    causes = st.get("candidate_root_causes") or []
+    paths = [c["path"] for c in causes]
+    prod_idx = [i for i, p in enumerate(paths) if not p.startswith("tests/")]
+    test_idx = [i for i, p in enumerate(paths) if p.startswith("tests/")]
+    if test_idx:  # a same-name test hit exists in this fixture
+        assert prod_idx, "production hit must be present alongside the test hit"
+        assert max(prod_idx) < min(test_idx), \
+            "production root causes must rank above test-file hits: %s" % paths
+    prov = st.get("context", {}).get("provenance") or []
+    for p in prov:
+        if p["path"].startswith("tests/"):
+            assert p.get("in_test_file") is True
+            assert "TEST file" in p["why"]
+        else:
+            assert not p.get("in_test_file")

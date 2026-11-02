@@ -269,14 +269,22 @@ def locate(repo: Path, task_text: str, task_type: str = "issue2code",
         if f not in files:
             files.append(f)
     # provenance per located function (WHY / BACKEND / SOURCE)
+    # V11 #2: production hits first, test-file hits last and tagged — a
+    # same-named test helper is corroborating evidence, not the root cause
+    ordered = sorted(loc_res["functions"],
+                     key=lambda f: bool(f.get("in_test_file")))
     provenance = []
-    for f in loc_res["functions"]:
+    for f in ordered:
+        is_test = bool(f.get("in_test_file"))
         prov = {"path": f["path"], "symbol": f["symbol"],
                 "span": [f["start_line"], f["end_line"]],
                 "why": loc_res["stop_evidence"]["question"]
-                + " — exact identifier match inside the stage-1 shortlist",
+                + (" — exact identifier match in a TEST file (corroborating "
+                   "evidence, not the root cause)" if is_test else
+                   " — exact identifier match inside the stage-1 shortlist"),
                 "relation": "definition",
                 "backend": "python-ast+router",
+                "in_test_file": is_test,
                 "source_digest": f["source_digest"],
                 "digest_state": "CURRENT" if _digest(repo, f["path"]) == f["source_digest"]
                 else "CHANGED"}

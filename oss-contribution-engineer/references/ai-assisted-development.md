@@ -54,16 +54,24 @@ before authorizing. A flood of individually-acceptable PRs is still slop.
 - Respect the repository's AI policy (recon surfaces it: CONTRIBUTING sections,
   AGENTS.md, AI contribution policies). Kernel-style projects require an
   `Assisted-by: LLM` tag plus disclosure of tools, prompts (or summaries), affected
-  parts, and how it was tested. Other projects may ban AI contributions outright —
-  then the answer is to stop and tell the user.
+  parts, and how it was tested — there, disclose exactly as required or stop.
+  Other projects may ban AI contributions outright — then the answer is to stop
+  and tell the user.
+- **Default posture — a mature engineer, not a labeled bot.** When the policy is
+  silent (most projects): NO unsolicited AI markers. No "generated with…",
+  no AI Co-authored-by, no preamble about tooling. The human owns every line and
+  takes full responsibility (Linus's bar: quality + human ownership, not tooling
+  confession); a competent human using assistance is the community norm. Volunteered
+  AI labels are themselves noise maintainers dislike.
+- Two hard lines that never bend: if a project's policy requires disclosure,
+  disclose; if a maintainer asks directly whether AI was involved, answer honestly.
+  Misrepresenting authorship when asked is the one thing that turns normal
+  assistance into a ban.
 - **Bug/security reports must be "security informed"** (curl's term): the submitter
   must actually understand the issue they report. An AI-suggested vulnerability the
   human cannot explain — reproducer, impact, affected path — is not reported. This is
   the exact failure mode that flooded curl: reports about code the submitter never
   read. The Explain-Back check applies to upstream REPORTS, not just patches.
-- When the policy is silent, offer a brief, honest note about AI assistance in the PR
-  description and let the human decide whether to keep it. Never claim the work is
-  entirely human when it was not.
 
 ## Truth in testing
 

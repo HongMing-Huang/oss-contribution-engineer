@@ -114,7 +114,14 @@ def stage2_depth(repo: Path, query: str, shortlist: list[str],
                 if hit:
                     matched_this_iter += 1
                     if hit[0] == "exact":
-                        exact.append({**visited[-1], "match": "exact"})
+                        # V11 backlog #2 (fixed): same-named TEST helpers were
+                        # indistinguishable from production root causes. Tag
+                        # them — production hits stay the root-cause list,
+                        # test hits become corroborating evidence only.
+                        from retrieval_router import is_test_path
+                        row = {**visited[-1], "match": "exact",
+                               "in_test_file": is_test_path(ps)}
+                        exact.append(row)
         if exact:
             return {"visited": visited, "exact_matches": exact,
                     "iterations_used": iteration + 1,
@@ -201,7 +208,8 @@ def localize(repo: Path, query: str, task_type: str, max_iterations: int,
                        "kind": m["kind"], "start_line": m["start_line"],
                        "end_line": m["end_line"],
                        "source_digest": m["source_digest"],
-                       "relation": "definition", "backend": "python-ast+router"}
+                       "relation": "definition", "backend": "python-ast+router",
+                       "in_test_file": m.get("in_test_file", False)}
                       for m in s2["exact_matches"]],
         "exit_reason": s2["exit_reason"],
         "stop_evidence": s2.get("stop_evidence"),
