@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.2.1] — 2026-11-03
+
+Real-repo validation round (lobehub/lobe-chat, 23k files) — three defects
+found in consumer_impact.py's first cut and fixed:
+
+- workspace package imports (`@scope/pkg` via package.json `exports`) and
+  tsconfig path aliases (`@/x`) were unresolved — both dominant internal
+  import forms in real monorepos; resolution now reads package.json exports
+  maps and tsconfig paths precisely before falling back to tail matching
+- barrel re-exports (`export * from './x'`) propagate consumption: importers
+  of a package root are indirect consumers; the BARREL carries the verdict
+  (799 indirect importers on lobe-chat covered by 1 barrel verdict) instead
+  of demanding hundreds of sentences
+- the 4k-file scan cap stopped inside the first directory tree on real
+  monorepos (raised to 30k); the tail-match fallback now requires two
+  matching path segments (killed the `@/types/trace` ≠ `const/trace`
+  false-positive class)
+
+Validated end-to-end on the real repo: 1-line edit to a widely re-exported
+module → 808 consumers found in 3.7s → 4 barrel verdicts → COMPLETE. Also
+validated on the same repo: read-rules tiering (78 auto-read docs → 16 real
+binding rules), and pr_style against 10 real merged PRs (0% conventional
+commits — an agent writing "fix:" would be the outlier).
+
 ## [2.2.0] — 2026-11-03
 
 Second review round (consumer-side category critique). Gates prove actions,

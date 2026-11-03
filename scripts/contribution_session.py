@@ -668,13 +668,14 @@ def check_consumer_impact(repo, s) -> list[str]:
     if problems:
         return problems
     data = json.loads(Path(impact_files[-1]).read_text())
-    listed = {c["path"] for cs in (data.get("consumers") or {}).values()
-              for c in cs}
-    missing = sorted(listed - set(data.get("verdicts") or {}))
+    targets = {c["path"] for cs in (data.get("consumers") or {}).values()
+               for c in cs if c.get("direct")}
+    targets |= set(data.get("barrels") or {})
+    missing = sorted(targets - set(data.get("verdicts") or {}))
     if missing:
         return ["consumer impact incomplete — no verdict for: %s "
                 "(consumer_impact.py --verdict \"path::why safe / how "
-                "verified\")" % ", ".join(missing)]
+                "verified\" — direct consumers and barrels)" % ", ".join(missing)]
     return []
 
 

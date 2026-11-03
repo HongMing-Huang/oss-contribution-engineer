@@ -460,7 +460,7 @@ INVALID, ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/contribution_rules_scan.py | locate repo-local instruction files, excerpt rule-relevant lines | none |
 | scripts/duplicate_work_scan.py | prints gh capture commands, then aggregates captured issue/PR JSON (timeline cross-references, referencing commits) | none — capture via gh or a platform tool |
 | scripts/pr_style.py | prints gh capture commands, then profiles how contributors write merged PRs (title/commit/body conventions, size) — mirror the profile | none — capture via gh |
-| scripts/consumer_impact.py | who imports the changed production files (lexical scan); every listed consumer needs a `--verdict "path::why safe"` before PR_READY | none |
+| scripts/consumer_impact.py | import-graph scan of the changed production files (package.json exports, tsconfig aliases, barrel re-exports); direct consumers and barrels need a `--verdict "path::why safe"` before PR_READY | none |
 | scripts/diff_scope_check.py | diff vs intended scope; drift, lockfile, formatting-only flags; budget check | none |
 | scripts/evidence_manifest.py | witnessed command execution → tamper-evident JSONL manifest; `--head-bound` ties PASS to the HEAD it ran on | none |
 | scripts/validation_report.py | manifest → Validation Report table; never collapses skips into PASS; marks head-bound evidence STALE after HEAD moves (exit 5) | none |
