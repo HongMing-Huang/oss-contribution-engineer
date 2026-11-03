@@ -107,7 +107,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Diff scope audit against intended files and budget.")
     ap.add_argument("repo", nargs="?", default=".")
     ap.add_argument("--base", default="HEAD", help="base ref (default HEAD; e.g. origin/main)")
-    ap.add_argument("--intended", default="", help="comma-separated intended file paths")
+    ap.add_argument("--intended", nargs="+", action="extend", default=[],
+                    help="intended file paths — space-separated, repeatable, "
+                         "and/or comma-separated (all forms accepted)")
     ap.add_argument("--hats", default="", help="declared hats for production files: path=BEHAVIOR|REFACTOR,...")
     ap.add_argument("--show-hats", action="store_true", help="include per-file two-hats classification")
     ap.add_argument("--show-delta", action="store_true", help="include complexity delta in JSON output")
@@ -176,7 +178,9 @@ def main() -> int:
     for info in files.values():
         counts[info["category"]] = counts.get(info["category"], 0) + 1
 
-    intended = [s.strip() for s in args.intended.split(",") if s.strip()]
+    # accept every reasonable spelling: "--intended a b", repeated flags,
+    # and the old comma-separated single string
+    intended = [p for tok in args.intended for p in tok.split(",") if p.strip()]
     unintended = sorted(p for p in files if p not in intended) if intended else []
     missing = sorted(p for p in intended if p not in files) if intended else []
 

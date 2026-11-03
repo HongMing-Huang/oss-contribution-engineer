@@ -86,6 +86,27 @@ def _file_digest(path: str) -> str | None:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
+def _resolve_test_file(raw: str, cwd: str | None, repo: Path) -> Path | None:
+    """Resolve a --test-file argument the way a reasonable caller means it:
+    absolute / cwd-relative first, then relative to --cwd when the caller gave
+    one, then relative to the repository root (a monorepo package run with
+    repo-relative paths — real-usage defect: this used to silently drop the
+    identity, breaking RED binding). Returns None only if no base finds it."""
+    candidates = []
+    p = Path(raw)
+    if p.is_absolute():
+        candidates.append(p)
+    else:
+        if cwd:
+            candidates.append(Path(cwd) / p)
+        candidates.append(Path.cwd() / p)
+        candidates.append(repo / p)
+    for c in candidates:
+        if c.exists():
+            return c.resolve()
+    return None
+
+
 def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
                head_bound: bool = False, evidence_type: str = "GENERAL",
                regression_id: str | None = None,
@@ -123,6 +144,23 @@ def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
     artifact.write_text(output)
     sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
 
+    # test-file identity: resolve the way the caller means the path (see
+    # _resolve_test_file); an unresolvable path is a loud warning, never a
+    # silent identity drop (silent drops broke RED binding in real use).
+    test_identity = []
+    unresolved_tests = []
+    for f in test_files or []:
+        resolved = _resolve_test_file(f, cwd, repo)
+        if resolved is None:
+            unresolved_tests.append(f)
+            continue
+        test_identity.append({"path": str(resolved), "digest": _file_digest(str(resolved))})
+    if unresolved_tests:
+        print("warning: --test-file not found from cwd, --cwd, or the repo root; "
+              "identity NOT recorded for: %s — use an absolute path or a path "
+              "relative to --cwd (RED↔GREEN binding needs the identity)"
+              % ", ".join(unresolved_tests), file=sys.stderr)
+
     failed = p.returncode != 0
     if expect_fail and not failed:
         # an expected-failure record that exited 0 means the proof did NOT hold
@@ -141,8 +179,7 @@ def cmd_record(repo: Path, purpose: str, command: list[str], expect_fail: bool,
         "regression_id": regression_id,
         # regression-test identity: digests let the runtime detect a test that was
         # changed after RED (weakening the test to obtain GREEN)
-        "test_identity": [{"path": str(Path(f).resolve()), "digest": _file_digest(f)}
-                          for f in (test_files or []) if Path(f).exists()],
+        "test_identity": test_identity,
         "command": command,
         "exit_code": p.returncode,
         "status": status,

@@ -196,7 +196,7 @@ Entry and exit gates — every transition must satisfy its criteria:
 
 | Transition | Gate (all required) |
 |------------|---------------------|
-| DISCOVER → RECON | target repository chosen; mode/permissions agreed; Goal Contract compiled (goal_compiler.py) |
+| DISCOVER → RECON | target repository chosen; mode/permissions agreed; Goal Contract compiled (goal_compiler.py — `--repository` must be the checkout's origin slug: on a fork that is `<you>/<repo>`, NOT upstream) |
 | RECON → CANDIDATE | Repository Contribution Profile exists; local rules noted; cognition backend selected with alignment recorded; candidate area named |
 | CANDIDATE → DEDUPLICATE | concrete suspected behavior; affected subsystem; source of expected behavior |
 | DEDUPLICATE → PROVE | issue search, PR search, assignment/comment inspection, recent-commit inspection recorded; classification assigned (AVAILABLE, CLAIMED, PR_EXISTS, DESIGN_BLOCKED, NEEDS_MAINTAINER_DECISION, INVALID, STALE, TOO_LARGE, TOO_TRIVIAL, GOOD_CANDIDATE) |
@@ -262,9 +262,12 @@ the outcome as UNDERSTOOD (only on explicit human confirmation), DEFERRED, or IN
 ## Repository recon (always first)
 
 Run `repo_audit.py . --json` (output is gate-ready: carries `repository_id`,
-`base_sha`, and `digest`) and `contribution_rules_scan.py .` from the repository
-root (or the one-op `read-rules`, which records both the RULES_DISCOVERED
-manifest and the full-read receipt).
+`base_sha`, and `digest`) and `contribution_rules_scan.py scan .` from the
+repository root — or `read-rules`, which discovers the binding set (CONTRIBUTING,
+AGENTS/CLAUDE, SECURITY, PR templates; READMEs/changelogs are reference, not
+binding), then takes one `--read PATH::rule` per document: the sentence you
+state is the proof of engagement, and the read receipt cannot be produced
+without it.
 
 Then read the files they surface (CONTRIBUTING, AGENTS.md, CLAUDE.md, SECURITY,
 CODEOWNERS, PR/issue templates, CI configs) and produce the Repository Contribution
@@ -387,8 +390,9 @@ Method: references/patch-design.md (§ diff budget, § scope audit).
 1. Recon (above).
 2. Triage the issue: body, labels, assignees, comments, linked PRs, author branches,
    recent commits in the area, maintainer responses, duplicate/closed attempts.
-   `duplicate_work_scan.py` prints the exact `gh` capture commands, then aggregates
-   the captured JSON (a platform tool may substitute; record which).
+   `duplicate_work_scan.py commands OWNER/REPO#N` prints the exact `gh` capture
+   commands; `parse-issue` / `parse-search` / `bundle` aggregate the captured JSON
+   (a platform tool may substitute; record which).
 3. Classify per the DEDUPLICATE gate. If not GOOD_CANDIDATE/AVAILABLE → report and stop.
 4. Investigation Only on the reported behavior: reproduce or disprove (Mode 4).
 5. If confirmed and the user asks for a fix: Fix path (below) from RED onward.
@@ -411,7 +415,10 @@ Method: references/patch-design.md (§ diff budget, § scope audit).
 RED → PATCH → GREEN → REGRESSION → CONTRIBUTOR_UNDERSTANDING → REVIEW → PR_READY,
 exactly per the state machine. Produce assets/implementation-plan.md (PATCH PLAN) before
 editing production code, assets/change-walkthrough.md after REGRESSION, and
-assets/review-report.md from the adversarial pass. Prepare, never publish, the PR draft
+assets/review-report.md from the adversarial pass. Before drafting the PR, profile how
+this project's own contributors write merged PRs (`pr_style.py commands` → capture →
+`profile`) and mirror that profile — title style, body length, commit conventions —
+instead of any generic template. Prepare, never publish, the PR draft
 (assets/pull-request-template.md) — publishing needs REMOTE_WRITE.
 
 ### Review-response path (Mode 9)
@@ -452,6 +459,7 @@ INVALID, ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/repo_audit.py | detect languages, build/test/lint tooling, CI, contribution docs, AI instructions; JSON + summary | none |
 | scripts/contribution_rules_scan.py | locate repo-local instruction files, excerpt rule-relevant lines | none |
 | scripts/duplicate_work_scan.py | prints gh capture commands, then aggregates captured issue/PR JSON (timeline cross-references, referencing commits) | none — capture via gh or a platform tool |
+| scripts/pr_style.py | prints gh capture commands, then profiles how contributors write merged PRs (title/commit/body conventions, size) — mirror the profile | none — capture via gh |
 | scripts/diff_scope_check.py | diff vs intended scope; drift, lockfile, formatting-only flags; budget check | none |
 | scripts/evidence_manifest.py | witnessed command execution → tamper-evident JSONL manifest; `--head-bound` ties PASS to the HEAD it ran on | none |
 | scripts/validation_report.py | manifest → Validation Report table; never collapses skips into PASS; marks head-bound evidence STALE after HEAD moves (exit 5) | none |

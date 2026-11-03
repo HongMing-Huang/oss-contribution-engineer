@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.1.0] — 2026-11-03
+
+Real-usage fixes from a first external session (TypeScript monorepo, lobehub):
+six reported problems, three of them blocking, all verified against source.
+
+### Fixed
+- Test-path recognition now covers the whole TS/JS family (`.test.ts/.tsx`,
+  `.spec.ts/.tsx`, `.mjs/.cjs`, …) — co-located `*.test.ts` regression tests
+  no longer fail classification, and test files never enter rules discovery
+- `--test-file` resolution tries the caller's cwd, then `--cwd`, then the
+  repo root; an unresolvable path is a loud warning instead of a silent
+  identity drop that broke RED binding
+- Goal-contract identity gate now explains that session identity is the
+  ORIGIN slug (on a fork: `<you>/<repo>`, not upstream) and shows the
+  recompile command
+- `diff_scope_check.py --intended` accepts space-separated, repeated, and
+  comma-separated forms
+- SKILL.md script examples corrected (`contribution_rules_scan.py scan`,
+  `duplicate_work_scan.py commands`); a new lint check now fails CI on any
+  script invocation whose subcommand isn't in the real `--help` output
+
+### Changed
+- **Rules reading is two-step and honest**: READMEs, changelogs, and
+  data/test files are no longer "binding governance docs" (a monorepo
+  previously demanded 78 full reads). `read-rules` discovers the curated
+  binding set, then takes one `--read PATH::rule` per document — the stated
+  sentence is the claim of engagement; the receipt can't be mass-produced
+- First-run check renamed reference in README (`envcheck.py`); envcheck now
+  warns when the copy it checks differs from the copy an agent loaded
+
+### Added
+- `pr_style.py` — capture and profile how a project's contributors actually
+  write merged PRs (title/commit/body conventions, size); the PR draft must
+  mirror the profile instead of a generic template
+  (references/maintainer-etiquette.md § Study the project's contributors first)
+- `note --kind test` for recording what a test run showed during
+  investigation
+
 ## [2.0.0] — 2026-11-02
 
 First public release. Full lineage in `dev/` (experiment ledgers V3–V12).
@@ -24,7 +62,7 @@ First public release. Full lineage in `dev/` (experiment ledgers V3–V12).
   entries)
 - Upstream lifecycle classification from captured PR state (MERGED is the
   only success; closed≠merged; 8 outcome classes)
-- `doctor.py` first-run environment check
+- `envcheck.py` first-run environment check
 - 95 tests; CI (lint + triangle audit + capability-claim validation)
 - Anti-slop doctrine grounded in the 2025–26 community record (curl, Godot,
   OCaml, kernel); serial-contribution hard rule; security-informed reporting

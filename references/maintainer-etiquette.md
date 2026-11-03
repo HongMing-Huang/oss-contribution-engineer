@@ -81,3 +81,27 @@ Every artifact reads as if written by a contributor who has worked here for year
   in recent merged PRs and issues is the register to write in.
 - State limits plainly ("not tested on Windows") without hedging or
   over-explaining. Confidence where earned, silence where it isn't.
+
+## Study the project's contributors first (PR style profiling)
+
+"Match the project's own register" is checkable, not vibes. Before drafting
+any PR, capture how this project's contributors actually write merged PRs and
+mirror the numbers (`pr_style.py commands OWNER/REPO` → run the gh captures →
+`pr_style.py profile <capture.json>`). The profile yields:
+
+- **Title conventions** — if conventional-commit prefixes dominate, use one
+  with the project's own scope; if none of the sample uses them, a
+  conventional prefix on YOUR title is a visible outlier. Start with an
+  imperative verb at the sample's median length.
+- **Body structure** — the percentages that carry headings, checklists, and
+  issue links are the structure to copy. A body far longer than the project's
+  median, with sections its contributors never write, reads as generated.
+- **Commit style** — imperative ratio and headline length per the profile;
+  match the dominant form.
+- **Size** — the median merged PR's additions/deletions/files. A draft far
+  above the median needs a stated reason (or a split).
+
+AI-flavored tells that the profile makes avoidable: emoji section headers,
+"This PR introduces/addresses…" boilerplate the project never uses, exhaustive
+checkbox theater when contributors write three lines, summary paragraphs that
+restate the diff. If the project's merged PRs are terse, yours is terse.

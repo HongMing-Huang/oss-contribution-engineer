@@ -130,3 +130,44 @@ def test_cli_surface_documented():
                      "resume", "report", "status", "advance", "init"}
     missing = sorted(s for s in must_document if s in names and s not in text)
     assert not missing, "CLI offers but SKILL.md never mentions: %s" % missing
+
+
+def test_inline_script_invocations_use_real_subcommands():
+    """Real-usage defect class (lobehub session, problems 4/5): SKILL.md
+    showed script invocations that the real CLI rejects — missing or stale
+    subcommands. Any inline-code span or bash-block line that invokes a
+    script must name a subcommand the script's argparse exposes today."""
+    text = SKILL.read_text()
+    script_names = sorted(set(re.findall(r"scripts/([\w\-]+\.py)", text)))
+    assert script_names, "no scripts/ references found"
+    candidates = re.findall(r"`([^`\n]+)`", text)
+    for block in re.findall(r"```bash\n(.*?)```", text, re.S):
+        candidates.extend(l.strip() for l in block.splitlines() if l.strip())
+    problems = []
+    for name in script_names:
+        script = ROOT / "scripts" / name
+        if not script.exists():
+            continue  # missing files are test_referenced_paths_exist's job
+        p = subprocess.run(["/usr/bin/env", "python3", str(script), "--help"],
+                           capture_output=True, text=True, shell=False)
+        if p.returncode != 0:
+            continue
+        m = re.search(r"\{([a-z-]+(?:,[a-z-]+)+)\}", p.stdout)
+        if not m:
+            continue  # script has no subcommand surface
+        valid = set(m.group(1).split(","))
+        for cand in candidates:
+            tokens = cand.split()
+            if len(tokens) < 2 or tokens[0].rsplit("/", 1)[-1] != name:
+                continue  # not an invocation (bare mention) of this script
+            words = set()
+            for t in tokens[1:]:
+                t = t.strip("`\"'|;,()<>")
+                if not t or t.startswith(("-", "$", "<")):
+                    continue
+                words.add(t.lower())
+            if not words & valid:
+                problems.append("%s invoked without a real subcommand: %r "
+                                "(valid: %s)" % (name, cand, sorted(valid)))
+    assert not problems, "stale script usage in SKILL.md:\n  " + \
+        "\n  ".join(problems)

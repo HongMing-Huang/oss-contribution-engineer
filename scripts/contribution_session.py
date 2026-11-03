@@ -205,10 +205,22 @@ def production_changes_since(repo: Path, base_sha: str) -> tuple[list[str], list
     return prod, tests
 
 
+# Regression-test file shapes across the common language families. The TS/JS
+# family uses BOTH .test.* and .spec.* suffixes (jest/vitest); missing them made
+# co-located *.test.ts regression tests unclassifiable in TS repositories
+# (real-usage defect, lobehub session).
+TEST_FILE_SUFFIXES = (
+    "_test.py", ".test.py",
+    ".test.js", ".test.jsx", ".test.ts", ".test.tsx", ".test.mjs", ".test.cjs",
+    ".spec.js", ".spec.jsx", ".spec.ts", ".spec.tsx", ".spec.mjs", ".spec.cjs",
+    "_test.go", "_test.rs", ".test.rs", "_test.rb", "_test.dart",
+)
+
+
 def is_test_path(path: str) -> bool:
     low = path.lower()
     return ("/test" in low or "/tests/" in low or low.startswith("tests/")
-            or low.endswith(("_test.py", ".test.js", "_test.go", "_test.rs"))
+            or low.endswith(TEST_FILE_SUFFIXES)
             or "/__tests__/" in low or "conftest" in low)
 
 
@@ -742,9 +754,11 @@ def cmd_init(repo: Path, args) -> int:
         print("GATE REFUSED: goal contract was compiled for repository %s but this "
               "session's repository identity is %s"
               % (contract["repository"], repo_id), file=sys.stderr)
-        print("next: recompile the contract for this repository "
-              "(goal_compiler.py <repo> compile --repository %s ...)"
-              % repo_id, file=sys.stderr)
+        print("next: session identity is the ORIGIN remote slug of this checkout "
+              "— on a fork that is <you>/<repo>, not the upstream. Recompile "
+              "the contract with --repository %s (goal_compiler.py <repo> "
+              "compile --repository %s ...)"
+              % (repo_id, repo_id), file=sys.stderr)
         return 1
     session = {
         "session_version": 2,
@@ -1401,7 +1415,7 @@ def cmd_investigate(repo: Path, args) -> int:
 
 
 NOTE_KINDS = ("known_facts", "hypotheses", "evidence", "contradictions",
-              "unresolved", "root_causes", "rejected")
+              "unresolved", "root_causes", "rejected", "test")
 
 
 def cmd_note(repo: Path, args) -> int:
@@ -1715,8 +1729,13 @@ def cmd_status_v10(repo: Path, args) -> int:  # thin extension of cmd_status
 
 
 def cmd_read_rules(repo: Path, args) -> int:
-    """Discover repository-local binding rules, read them fully, record both
-    artifacts (RULES_DISCOVERED + RULES_READ) — the whole rules step in one op."""
+    """Step 1 (no --read): discover binding rules, record RULES_DISCOVERED,
+    and list exactly what must be read in full. Step 2 (--read PATH::rule,
+    one per binding doc): record the read receipt — the stated sentence is
+    the why-applicable claim. Real-usage defect (lobehub session): the old
+    one-op form auto-declared every discovered document read with a generic
+    'applies to this contribution'; a receipt is now only producible by
+    naming, per document, the rule it imposes."""
     from contribution_rules_scan import binding_manifest as _bm, read_receipt as _rr
     man = _bm(repo, max_depth=4)
     man_str = man if isinstance(man, str) else json.dumps(man, indent=2)
@@ -1734,8 +1753,41 @@ def cmd_read_rules(repo: Path, args) -> int:
     if not docs:
         print("RESULT         NO_BINDING_RULES (nothing to read)")
         return 0
-    claims = [{"path": d["path"], "scope": "root",
-               "why": "applies to this contribution"} for d in docs]
+    binding_paths = [d["path"] for d in docs]
+    reads = args.read or []
+    if not reads:
+        print("RESULT         RULES DISCOVERED: %d binding document(s) — "
+              "read each in full:" % len(docs))
+        for d in docs:
+            print("  - %s (%s)" % (d["path"], d.get("scope", "root")))
+        print("then confirm each with:")
+        print("  read-rules --read \"%s::one sentence: the rule this doc imposes\""
+              % docs[0]["path"])
+        print("(one --read per binding document; the sentence is the claim of "
+              "engagement)")
+        return 0
+    claims, errors = [], []
+    for spec in reads:
+        if "::" not in spec:
+            errors.append("--read expects PATH::rule (got %r)" % spec)
+            continue
+        path, rule = spec.split("::", 1)
+        path, rule = path.strip(), rule.strip()
+        match = next((d for d in docs if d["path"] == path), None)
+        if match is None:
+            errors.append("%s is not a binding document (binding: %s)"
+                          % (path, ", ".join(binding_paths)))
+            continue
+        if len(rule) < 10:
+            errors.append("%s: rule sentence too thin to count as a claim of "
+                          "reading" % path)
+            continue
+        claims.append({"path": path, "scope": match.get("scope", "root"),
+                       "why": rule})
+    if errors:
+        for e in errors:
+            print("error: %s" % e, file=sys.stderr)
+        return 2
     artifact = _rr(repo, Path(mf), claims)
     rrj = repo / EVIDENCE_DIR / "rules-read.json"
     rrj.write_text(json.dumps(artifact, indent=2))
@@ -1744,7 +1796,18 @@ def cmd_read_rules(repo: Path, args) -> int:
                                              reason=None))
     if rc != 0:
         return rc
-    print("RESULT         RULES READ: %s" % ", ".join(d["path"] for d in docs))
+    covered = {c["path"] for c in artifact.get("covered", [])}
+    remaining = [p for p in binding_paths if p not in covered]
+    if artifact.get("problems"):
+        for pr in artifact["problems"]:
+            print("problem: %s" % pr, file=sys.stderr)
+    if remaining:
+        print("RESULT         RULES READ %d/%d — still to read and confirm: %s"
+              % (len(covered), len(binding_paths), ", ".join(remaining)))
+        print("next: re-run read-rules with a --read PATH::rule for each "
+              "remaining document")
+        return 1
+    print("RESULT         RULES READ: %s" % ", ".join(sorted(covered)))
     return 0
 
 
@@ -1848,8 +1911,13 @@ def main() -> int:
     p.set_defaults(func=cmd_evidence)
 
     p = sub.add_parser("read-rules",
-                       help="discover + fully read repo-local binding rules; "
-                            "records RULES_DISCOVERED and RULES_READ")
+                       help="discover repo-local binding rules; read each, "
+                            "then confirm with --read PATH::rule")
+    p.add_argument("--read", action="append", default=[],
+                   metavar="PATH::RULE",
+                   help="one per binding document: the path plus one sentence "
+                        "stating the rule that document imposes (the claim of "
+                        "engagement — repeated per doc)")
     p.set_defaults(func=cmd_read_rules)
 
     p = sub.add_parser("investigate",

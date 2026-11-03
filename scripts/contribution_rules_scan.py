@@ -26,13 +26,23 @@ SKIP_DIRS = {
     ".pytest_cache", "site-packages", ".next", "coverage", "_build", "deps",
 }
 
-INSTRUCTION_NAMES = [
+# Two tiers, split after a real-usage defect (lobehub session): READMEs and
+# changelogs were classified as binding governance docs, so a monorepo
+# surfaced ~78 "must-read" documents (every package README, changelog.json,
+# even files named changes.test.ts). BINDING names govern how you contribute;
+# REFERENCE names are context — discovered, never gating.
+BINDING_NAMES = [
     "contributing", "code_of_conduct", "security", "developing", "development",
-    "hacking", "maintainers", "governance", "releasing", "readme", "changelog",
-    "changes", "pull_request_template", "issue_template", "support", "notice",
+    "hacking", "maintainers", "governance", "releasing",
+    "pull_request_template", "issue_template",
 ]
+REFERENCE_NAMES = ["readme", "changelog", "changes", "notice", "support"]
 AI_NAMES = ["agents.md", "claude.md", "gemini.md", "copilot-instructions.md",
             ".cursorrules", "cursor-rules"]
+
+# Instruction files are human-written documents; data/JSON/source trees are
+# not, whatever their stem is called.
+DOC_EXTS = {".md", ".mdx", ".txt", ".rst", ".adoc"}
 
 MAX_FILE_BYTES = 400_000
 MAX_LINES_PER_FILE = 12
@@ -63,14 +73,25 @@ def is_instruction_file(rel_name: str) -> str | None:
     name = rel_name.lower()
     base = os.path.basename(name)
     stem = base.rsplit(".", 1)[0] if "." in base else base
+    ext = ("." + base.rsplit(".", 1)[1]) if "." in base else ""
+    # noise guard: test files and non-document extensions are never rules,
+    # whatever their stem claims (real defect: changes.test.ts, changelog.json)
+    if ext and ext not in DOC_EXTS:
+        return None
+    if any(s in base for s in (".test.", ".spec.", "_test.")) \
+            or base.startswith(("test_", "conftest.")):
+        return None
     for ai in AI_NAMES:
         if base == ai:
             return "ai_instruction"
     if base.startswith("copilot-instructions") or base.startswith(".cursorrules"):
         return "ai_instruction"
-    for n in INSTRUCTION_NAMES:
+    for n in BINDING_NAMES:
         if stem.startswith(n):
             return "governance_doc"
+    for n in REFERENCE_NAMES:
+        if stem.startswith(n):
+            return "reference_doc"
     if ".github" in name and "template" in base:
         return "template"
     return None
@@ -131,11 +152,13 @@ def scan(repo: Path, max_depth: int) -> dict:
 def summarize(report: dict) -> str:
     lines = [f"Contribution rules scan: {report['repository']}"]
     for f in report["instruction_files"]:
-        star = " *AI*" if f["kind"] == "ai_instruction" else ""
+        star = {"ai_instruction": " *AI*",
+                "reference_doc": " *reference*"}.get(f["kind"], "")
         lines.append(f"  {f['path']} ({f['bytes']} bytes){star}")
         for h in f.get("matched_lines", []):
             lines.append(f"    L{h['line']} [{', '.join(h['tags'])}] {h['text']}")
-    lines.append("Next: read every listed file in full; treat its rules as binding.")
+    lines.append("Next: read every listed file in full; *reference* files are "
+                 "context, not binding rules.")
     return "\n".join(lines)
 
 
@@ -198,9 +221,11 @@ def binding_manifest(repo: Path, max_depth: int) -> dict:
             __import__("datetime").timezone.utc).isoformat(),
         "binding": binding,
         "discovered": discovered,
-        "note": "binding = AI instructions + governance docs; templates are "
-                "discovered but not binding. Nested/subsystem rules override "
-                "broader defaults where applicable.",
+        "note": "binding = AI instructions + governance docs (contribution "
+                "process only). READMEs/changelogs are classified reference "
+                "— discovered, never gating. Templates other than PR/issue "
+                "templates are discovered but not binding. Nested/subsystem "
+                "rules override broader defaults where applicable.",
     }
     import hashlib
     artifact["digest"] = hashlib.sha256(json.dumps(

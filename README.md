@@ -39,7 +39,7 @@ Or manually — copy this folder to any skills-compatible agent's skill director
 ### First run
 
 ```bash
-python3 <SKILL_DIR>/scripts/doctor.py
+python3 <SKILL_DIR>/scripts/envcheck.py
 ```
 
 Checks Python ≥3.10, git, gh CLI (critical) and optional LSP backends

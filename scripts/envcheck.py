@@ -117,6 +117,11 @@ def main() -> int:
               "the skill works without them)" % opt_missing)
     else:
         print("RESULT: READY — all checks passed.")
+    print("note: this check ran against the copy at the [Skill directory] "
+          "path above. If your agent loaded the skill from a DIFFERENT "
+          "directory, that copy may be stale — re-run: "
+          "npx skills add https://github.com/HongMing-Huang/"
+          "oss-contribution-engineer")
     print("\nQuick start:")
     print("  python3 <SKILL_DIR>/scripts/contribution_session.py <repo> "
           "investigate --from-issue OWNER/REPO#123")

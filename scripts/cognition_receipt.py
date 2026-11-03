@@ -98,7 +98,9 @@ def cmd_record_read(args) -> int:
         digest = hashlib.sha256(p.read_bytes()).hexdigest()
         entry = {"path": path, "read_at": datetime.now(timezone.utc).isoformat(),
                  "digest": digest, "ranges": args.ranges or ["full"], "why": args.why or ""}
-        bucket = "tests_read" if ("/test" in path or path.endswith(("_test.py", ".test.js")) or "_test." in path) else "sources_read"
+        bucket = "tests_read" if ("/test" in path or "_test." in path or ".test." in path
+                                  or ".spec." in path or "/__tests__/" in path
+                                  or "/tests/" in path) else "sources_read"
         receipt[bucket].append(entry)
     save(repo, receipt)
     print("recorded %d read(s) into %s" % (len(args.paths), args.task_id))
