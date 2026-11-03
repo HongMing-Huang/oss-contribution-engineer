@@ -156,9 +156,23 @@ def main() -> int:
     for l in status_lines:
         if not l.startswith("??"):
             continue
-        path = l[3:]
+        path = l[3:].strip('"')
         if path.endswith(".pyc") or path.startswith(tooling_prefixes) or "/__pycache__/" in path:
             continue  # tooling output, not patch scope
+        if path.endswith("/"):
+            # git reports a wholly-untracked DIRECTORY as one entry — expand it
+            # to files so scope findings name real paths, not "dir/" (real-usage
+            # defect: new __tests__/ was flagged wholesale until staged)
+            d = repo / path
+            n = 0
+            for sub in sorted(d.rglob("*")):
+                if sub.is_file() and not sub.name.endswith(".pyc") \
+                        and "__pycache__" not in sub.parts:
+                    untracked.append(sub.relative_to(repo).as_posix())
+                    n += 1
+                    if n >= 200:
+                        break
+            continue
         untracked.append(path)
     for path in untracked:
         if path not in files:

@@ -85,6 +85,18 @@ def artifact(repo: Path, name: str, a_type: str, repo_id: str,
     return str(p)
 
 
+def record_impact(repo: Path) -> None:
+    """Record a complete CONSUMER_IMPACT artifact (PR_READY gate). Empty
+    consumer list with zero verdicts outstanding = trivially complete, like
+    a test-only diff."""
+    base = git(repo, "rev-parse", "HEAD")
+    ia = artifact(repo, "impact.json", "CONSUMER_IMPACT", repo_id(repo), base,
+                  {"changed_production_files": [], "consumers": {},
+                   "verdicts": {}})
+    r = run(SESSION, str(repo), "record", "--kind", "impact", "--file", ia)
+    assert r.returncode == 0, r.stderr
+
+
 def session_state(repo: Path) -> dict:
     sf = repo / ".oss-contrib-evidence" / "session.json"
     return json.loads(sf.read_text())
@@ -165,6 +177,7 @@ def test_happy_path_to_pr_ready(repo):
                   {"conclusion": "WITHIN_SCOPE"})
     r = run(SESSION, str(repo), "record", "--kind", "scope-audit", "--file", sa)
     assert r.returncode == 0, r.stderr
+    record_impact(repo)
     assert run(SESSION, str(repo), "advance", "--to", "PR_READY").returncode == 0
     assert "PR_READY" in run(SESSION, str(repo), "status").stdout
 
@@ -278,6 +291,7 @@ def test_review_loop_reenters_patch_and_rereview(repo):
     sa = artifact(repo, "scope.json", "SCOPE_AUDIT", repo_id(repo), base,
                   {"conclusion": "WITHIN_SCOPE"})
     run(SESSION, str(repo), "record", "--kind", "scope-audit", "--file", sa)
+    record_impact(repo)
     run(SESSION, str(repo), "advance", "--to", "PR_READY")
     # grant + receipt the OPEN_PR action, then observe the published PR
     run(SESSION, str(repo), "set-authority", "--grant", "remote", "--action",
@@ -407,6 +421,7 @@ def init_and_reach_pr_ready(repo: Path, task: str):
     sa = artifact(repo, "scope.json", "SCOPE_AUDIT", repo_id(repo), base,
                   {"conclusion": "WITHIN_SCOPE"})
     run(SESSION, str(repo), "record", "--kind", "scope-audit", "--file", sa)
+    record_impact(repo)
     run(SESSION, str(repo), "advance", "--to", "PR_READY")
 
 

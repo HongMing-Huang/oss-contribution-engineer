@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.2.0] — 2026-11-03
+
+Second review round (consumer-side category critique). Gates prove actions,
+not semantics — this release closes the semantic gap the first real run
+exposed: every check green, three downstream consumers broken.
+
+### Added
+- `consumer_impact.py` — finds every importer of the changed production
+  files (lexical import scan, python/js/ts/go; labeled heuristic). PR_READY
+  now blocks until each listed consumer carries an auditable
+  `--verdict "path::why safe / how verified"` sentence; thin or unlisted
+  verdicts are refused
+- PR template declares EXACTLY ONE problem per PR — a second problem found
+  mid-work means a separate investigation and PR
+
+### Fixed
+- Session evidence can no longer leak into a contribution: `init` adds
+  `.oss-contrib-evidence/` to `.git/info/exclude` (repo-local ignore, zero
+  diff pollution, idempotent)
+- Scope audit expands wholly-untracked directories to real file paths
+  (was: `unintended_changes: ["__tests__/"]` until staged)
+
 ## [2.1.0] — 2026-11-03
 
 Real-usage fixes from a first external session (TypeScript monorepo, lobehub):

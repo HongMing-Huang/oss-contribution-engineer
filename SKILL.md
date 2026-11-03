@@ -206,7 +206,7 @@ Entry and exit gates — every transition must satisfy its criteria:
 | GREEN → REGRESSION | focused regression test passes; GREEN output stored |
 | REGRESSION → CONTRIBUTOR_UNDERSTANDING | Change Walkthrough drafted from the real diff, current source (file:line), and the actual tests; explain-back questions prepared; evidence not stale (refreshed if the patch changed) |
 | CONTRIBUTOR_UNDERSTANDING → REVIEW | explain-back attempted and its status recorded — UNDERSTOOD (explicit human confirmation), DEFERRED (human chose to proceed without it), or INCOMPLETE (gaps named, teaching offered); the agent never marks UNDERSTOOD itself |
-| REVIEW → PR_READY | adversarial diff review performed; maintainer-perspective simulation answered from the actual patch; no unresolved correctness issues; testing evidence and untested areas recorded; PR draft problem-first |
+| REVIEW → PR_READY | adversarial diff review performed; maintainer-perspective simulation answered from the actual patch; no unresolved correctness issues; testing evidence and untested areas recorded; consumer impact recorded — every importer of the changed production files carries an auditable verdict (`consumer_impact.py --base` then `--verdict "path::why safe"`); PR draft problem-first, exactly one problem per PR |
 | PR_READY → IN_REVIEW | PR published with explicit REMOTE_WRITE; PR state captured (upstream_state.py capture commands) and classified; iteration baseline recorded (revision, validations run) |
 | IN_REVIEW → PATCH | accepted review comment requires a code/test change; concern classified and explained to the contributor via the 5-part review block; PATCH PLAN updated first |
 | IN_REVIEW → READY_FOR_REREVIEW | review fixes committed AND revalidation evidence recorded at the new HEAD AND re-review explicitly signaled (re-request / PTAL per repo convention) — each fact from captured state, not self-report |
@@ -460,6 +460,7 @@ INVALID, ALREADY_FIXED, DUPLICATE, DESIGN_QUESTION.
 | scripts/contribution_rules_scan.py | locate repo-local instruction files, excerpt rule-relevant lines | none |
 | scripts/duplicate_work_scan.py | prints gh capture commands, then aggregates captured issue/PR JSON (timeline cross-references, referencing commits) | none — capture via gh or a platform tool |
 | scripts/pr_style.py | prints gh capture commands, then profiles how contributors write merged PRs (title/commit/body conventions, size) — mirror the profile | none — capture via gh |
+| scripts/consumer_impact.py | who imports the changed production files (lexical scan); every listed consumer needs a `--verdict "path::why safe"` before PR_READY | none |
 | scripts/diff_scope_check.py | diff vs intended scope; drift, lockfile, formatting-only flags; budget check | none |
 | scripts/evidence_manifest.py | witnessed command execution → tamper-evident JSONL manifest; `--head-bound` ties PASS to the HEAD it ran on | none |
 | scripts/validation_report.py | manifest → Validation Report table; never collapses skips into PASS; marks head-bound evidence STALE after HEAD moves (exit 5) | none |

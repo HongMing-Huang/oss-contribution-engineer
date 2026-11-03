@@ -574,6 +574,7 @@ def gate_requirements(state: str) -> dict:
         "PR_READY": {
             "checks": [("validation current", validation_current_gate),
                        ("scope audit", scope_audit_gate),
+                       ("consumer impact", check_consumer_impact),
                        ("understanding recorded", understanding_gate)],
             "authority": [],
         },
@@ -649,6 +650,32 @@ def scope_audit_gate(repo, s):
 
 def understanding_gate(repo, s):
     return check_understanding(repo, s)
+
+
+def check_consumer_impact(repo, s) -> list[str]:
+    """Gates prove actions, not semantics — a real run passed RED, GREEN,
+    package tests, lint, type-check and scope audit, then broke three
+    downstream consumers only self-review caught. PR_READY now requires a
+    CONSUMER_IMPACT artifact whose every listed consumer carries an auditable
+    verdict sentence (loaded from disk so verdicts added after recording
+    still count)."""
+    impact_files = (s.get("artifacts") or {}).get("consumer_impact") or []
+    if not impact_files:
+        return ["no CONSUMER_IMPACT recorded — run consumer_impact.py <repo> "
+                "--base <base> during REVIEW, verdict every listed consumer, "
+                "then record --kind impact --file the artifact"]
+    problems = validate_artifact(Path(impact_files[-1]), "CONSUMER_IMPACT")
+    if problems:
+        return problems
+    data = json.loads(Path(impact_files[-1]).read_text())
+    listed = {c["path"] for cs in (data.get("consumers") or {}).values()
+              for c in cs}
+    missing = sorted(listed - set(data.get("verdicts") or {}))
+    if missing:
+        return ["consumer impact incomplete — no verdict for: %s "
+                "(consumer_impact.py --verdict \"path::why safe / how "
+                "verified\")" % ", ".join(missing)]
+    return []
 
 
 def check_rules_read(repo, s) -> list[str]:
@@ -782,9 +809,34 @@ def cmd_init(repo: Path, args) -> int:
         "history": [{"at": now(), "event": "init", "state": "DISCOVER"}],
     }
     save_session(repo, session)
+    _exclude_evidence_dir(repo)
     print("session initialized: %s (state DISCOVER, repo %s, base %s)"
           % (session_path(repo), repo_id, (session["base_sha"] or "?")[:12]))
+    print("evidence dir added to .git/info/exclude (repo-local ignore — "
+          "evidence files can never leak into a commit by accident)")
     return 0
+
+
+def _exclude_evidence_dir(repo: Path) -> None:
+    """The evidence dir lives INSIDE the target repository. A stray
+    `git add -A` would commit it into a contribution — that is garbage in a
+    PR by definition. .git/info/exclude ignores it repo-locally WITHOUT
+    touching the tracked .gitignore (which would itself be an unrelated
+    diff)."""
+    p = repo / ".git" / "info" / "exclude"
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        existing = p.read_text() if p.exists() else ""
+        if EVIDENCE_DIR not in existing:
+            with p.open("a") as f:
+                if existing and not existing.endswith("\n"):
+                    f.write("\n")
+                f.write("# oss-contribution-engineer session evidence (never part of a contribution)\n")
+                f.write(EVIDENCE_DIR + "/\n")
+    except OSError as e:
+        print("warning: could not update .git/info/exclude (%s) — never "
+              "commit %s/ into the contribution" % (e, EVIDENCE_DIR),
+              file=sys.stderr)
 
 
 def cmd_status(repo: Path, args=None) -> int:
@@ -945,9 +997,10 @@ def cmd_record(repo: Path, args) -> int:
     s = load_session(repo)
     kind = args.kind
     if kind not in ("recon", "dedupe", "walkthrough", "scope-audit", "patch-intent",
-                    "plan", "pack", "receipt", "rules-discovered", "rules-read"):
+                    "plan", "pack", "receipt", "rules-discovered", "rules-read",
+                    "impact"):
         print("error: --kind must be recon|dedupe|walkthrough|scope-audit|"
-              "patch-intent|plan|pack|receipt|rules-discovered|rules-read",
+              "patch-intent|plan|pack|receipt|rules-discovered|rules-read|impact",
               file=sys.stderr)
         return 2
     if kind in ("rules-discovered", "rules-read"):
@@ -995,6 +1048,18 @@ def cmd_record(repo: Path, args) -> int:
                             "artifact": artifact_path,
                             "reason": args.reason or "",
                             "at": now()}
+    elif kind == "impact":
+        files = [f for f in (args.file or []) if Path(f).exists()]
+        if not files:
+            print("error: impact requires --file (the CONSUMER_IMPACT artifact "
+                  "from consumer_impact.py)", file=sys.stderr)
+            return 2
+        problems = validate_artifact(Path(files[0]), "CONSUMER_IMPACT")
+        if problems:
+            for pr in problems:
+                print("error: %s" % pr, file=sys.stderr)
+            return 2
+        s["artifacts"].setdefault("consumer_impact", []).extend(files)
     else:
         files = [f for f in (args.file or []) if Path(f).exists()]
         if args.file and not files:

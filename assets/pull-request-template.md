@@ -11,7 +11,10 @@
 <!-- the underlying problem first (kernel: "Describe your problem. … there must be an
      underlying problem"), with user-visible impact; link the issue with the project's
      preferred keyword ("Fixes #123" / "Closes #123") only when the maintainer workflow
-     expects it -->
+     expects it. EXACTLY ONE problem per PR: a second distinct problem found while
+     working means a separate investigation and a separate PR — piling both into one
+     review wastes maintainer time; if the diff grew because a second problem surfaced,
+     split before drafting. -->
 
 ## Root Cause
 <!-- the code-level cause; commit that introduced it if known (Fixes: <sha> where used) -->
