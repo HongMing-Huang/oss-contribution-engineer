@@ -1,5 +1,35 @@
 # Changelog
 
+## [2.3.0] — 2026-11-05
+
+Standardized problem-digging harness — answers "where do the real problems
+hide" with four reproducible layers instead of ad-hoc manual rounds:
+
+- **A. synthetic real-shape monorepo** (always-on): package.json `exports`,
+  tsconfig path aliases, barrel re-exports, same-name twin trap — the shapes
+  self-authored fixtures lacked
+- **B. frozen real corpus** (always-on, offline): 10 real merged lobe-chat
+  PRs checked in; profile numbers pinned with gold assertions
+- **C. first-mile sequence** (always-on): the exact SKILL.md quick-start
+  command chain, asserted to work on a clean repo
+- **D. real-repo probes** (network-optional, cached clone): gold-labeled
+  rules/impact probes against lobe-chat; skips with reason when offline
+
+Building the harness itself dug out four defects that BOTH the old fixtures
+and the manual validation round missed:
+- tsconfig alias star replacement was off-by-one: `@/const/trace` resolved
+  to `packages/const/src/*/trace` — every alias-subpath DIRECT consumer was
+  silently missed (manual validation only eyeballed the barrel fan-out)
+- artifact digests covered `created_at`: the same scan twice → different
+  digests; digests now cover the measurement, not the wall clock
+- conventional-commit classifier missed gitmoji-prefixed titles
+  ("🔨 chore(x): …"), mis-advising "no conventional commits" for a repo
+  where 10/10 sampled titles carry the type(scope): shape
+- consumer_impact scan-cap truncation was silent; now recorded in the
+  artifact and warned on stderr
+
+125 tests green (123 offline + 2 network probes).
+
 ## [2.2.1] — 2026-11-03
 
 Real-repo validation round (lobehub/lobe-chat, 23k files) — three defects

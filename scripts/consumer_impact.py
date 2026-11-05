@@ -148,7 +148,10 @@ def _resolve_spec(spec: str, importer_rel: str, pkg_map: dict,
                 else (pkg_dir + "/" + sub)
         for prefix, target in aliases:
             if prefix.endswith("/*") and spec.startswith(prefix[:-1]):
-                return target + spec[len(prefix) - 1:]
+                # replace the star: '@/const/trace' + '@/const/*'->'pkg/src/*'
+                # must yield 'pkg/src/trace', not 'pkg/src/*/trace' (harness
+                # caught every alias-subpath consumer missing)
+                return target[:-1] + spec[len(prefix) - 1:]
             if spec == prefix:
                 return target
         return None
@@ -219,6 +222,7 @@ def find_consumers(repo: Path, changed: list[str]) -> dict:
     repo_files: set[str] = set()
     specs_by_file: dict[str, tuple[list, list]] = {}
     scanned = 0
+    truncated = False
     for dirpath, dirnames, filenames in _walk(repo):
         for fn in filenames:
             f = Path(dirpath) / fn
@@ -226,6 +230,7 @@ def find_consumers(repo: Path, changed: list[str]) -> dict:
                 continue
             scanned += 1
             if scanned > MAX_SCAN_FILES:
+                truncated = True
                 break
             try:
                 if f.stat().st_size > MAX_FILE_BYTES:
@@ -318,7 +323,8 @@ def find_consumers(repo: Path, changed: list[str]) -> dict:
                                "kind": "test" if is_test else "production"}
         for c, entry in sorted(hits.items()):
             consumers[c].append(entry)
-    return {"consumers": consumers, "barrels": barrels}
+    return {"consumers": consumers, "barrels": barrels,
+            "scanned_files": scanned, "scan_truncated": truncated}
 
 
 def _walk(repo: Path):
@@ -329,8 +335,11 @@ def _walk(repo: Path):
 
 
 def _digest(artifact: dict) -> str:
+    # digest covers the MEASUREMENT, not the wall clock — created_at excluded
+    # so the same scan of the same tree yields the same digest (found by the
+    # harness determinism test)
     return hashlib.sha256(json.dumps(
-        {k: v for k, v in artifact.items() if k != "digest"},
+        {k: v for k, v in artifact.items() if k not in ("digest", "created_at")},
         sort_keys=True).encode()).hexdigest()
 
 
@@ -422,6 +431,10 @@ def main() -> int:
 
     res = find_consumers(repo, changed)
     consumers, barrels = res["consumers"], res["barrels"]
+    if res.get("scan_truncated"):
+        print("warning: scan stopped at %d files (MAX_SCAN_FILES) — the "
+              "consumer list may be INCOMPLETE; raise the cap or split the "
+              "repo scan" % MAX_SCAN_FILES, file=sys.stderr)
     artifact = {
         "type": "CONSUMER_IMPACT",
         "schema_version": 1,
@@ -431,6 +444,8 @@ def main() -> int:
         "changed_production_files": changed,
         "consumers": consumers,
         "barrels": barrels,
+        "scanned_files": res.get("scanned_files"),
+        "scan_truncated": res.get("scan_truncated", False),
         "verdicts": {},
         "method": "lexical import scan (python/js/ts/go) with precise "
                   "resolution: workspace package.json exports, tsconfig path "

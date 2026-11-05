@@ -26,7 +26,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-CONVENTIONAL_RE = re.compile(r"^[a-z]+(\([^)\s]{1,30}\))?!?:\s", re.I)
+# conventional-commit shape, optionally behind gitmoji/symbol prefixes
+# ("🔨 chore(desktop): x" — found by the frozen-corpus harness: 3/10 real
+# lobe-chat titles carry it; matching from column 0 called them 0%)
+CONVENTIONAL_RE = re.compile(
+    r"^(?:[^\w\s]{1,4}\s*)*[a-z]+(\([^)\s]{1,30}\))?!?:\s", re.I)
 IMPERATIVE_STARTS = {
     "add", "fix", "remove", "refactor", "update", "use", "make", "move",
     "rename", "replace", "support", "handle", "avoid", "enable", "disable",
@@ -178,8 +182,11 @@ def cmd_profile(args) -> int:
              % (artifact["size"]["median_additions"],
                 artifact["size"]["median_deletions"],
                 artifact["size"]["median_changed_files"]))
+    # digest covers the MEASUREMENT, not the wall clock (created_at excluded —
+    # same corpus, same digest; found by the harness determinism test)
     artifact["digest"] = hashlib.sha256(json.dumps(
-        {k: v for k, v in artifact.items() if k != "digest"},
+        {k: v for k, v in artifact.items()
+         if k not in ("digest", "created_at")},
         sort_keys=True).encode()).hexdigest()
 
     out = Path(args.out) if args.out else src.with_name("pr-style-profile.json")

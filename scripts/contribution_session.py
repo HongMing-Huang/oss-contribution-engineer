@@ -1826,7 +1826,7 @@ def cmd_read_rules(repo: Path, args) -> int:
               "read each in full:" % len(docs))
         for d in docs:
             print("  - %s (%s)" % (d["path"], d.get("scope", "root")))
-        print("then confirm each with:")
+        print("next: read each fully, then confirm per document with —")
         print("  read-rules --read \"%s::one sentence: the rule this doc imposes\""
               % docs[0]["path"])
         print("(one --read per binding document; the sentence is the claim of "
