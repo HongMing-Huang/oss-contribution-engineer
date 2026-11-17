@@ -2,9 +2,9 @@
 name: oss-contribution-engineer
 description: Drive real, maintainer-respectful open-source contributions with a coding agent - repository recon, issue triage, bug hunting, evidence-first investigation, RED-to-GREEN regression fixes, adversarial review, PR preparation, review-response support - scaled to large codebases via goal contracts, hybrid retrieval routing, and bounded context packs instead of loading the whole repository. Use when the user wants to contribute to an open-source repo, find a real issue, check whether an issue is already claimed, investigate a bug before coding, find an unreported bug, review a patch like a maintainer, prepare a high-quality PR, respond to PR review, or work in a large codebase - or mentions "good first issue", "contribute upstream", "fix this open-source bug", or "the maintainer asked for changes". 中文触发：贡献开源、提 PR、上游 PR、调查 issue、修复开源 bug、大仓库贡献。Not for ordinary local app dev.
 license: MIT
-compatibility: Requires python3 and git on PATH. Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
+compatibility: Requires python3 and git on PATH (Windows: `python` via the py launcher if the `python3` alias is absent). Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
 metadata:
-  version: "2.0.0"
+  version: "2.3.1"
   author: "HongMing-Huang"
   philosophy: "AI may accelerate investigation, testing, implementation, and review, but it must never replace evidence, engineering judgment, or human responsibility."
   context_law: "Cognition selects. Source proves. Tests verify. History explains."
@@ -34,8 +34,11 @@ S=python3 <SKILL_DIR>/scripts/contribution_session.py
 
 python3 <SKILL_DIR>/scripts/envcheck.py
     # first-run check: python3/git/gh (critical) + LSP backends (optional)
+    # NO python3/git (chat-only tool, restricted sandbox)? Degraded mode: skip
+    # every script and gate — apply references/contribution-doctrine.md and
+    # references/maintainer-etiquette.md as plain discipline; say no gate ran
 $S <repo> investigate --from-issue 123 [--task-type stack_trace]
-    # fetches the issue's verbatim title+body via gh as the blind task source
+    # fetches the issue verbatim via gh as the blind task source
 $S <repo> investigate --task-text "<the task, verbatim>" [--task-type bug_report|stack_trace|review_comment|test_failure|edit_impact|explore|issue2code]
     # prepares repository intelligence (backend selection is automatic and
     # visible: AOCI runtime/file, Serena/LSP, python-ast, lexical — every
@@ -80,9 +83,8 @@ New quotations are not collected; new mechanics land as gates and tests.
 These override convenience, and repository-local rules (discovered in recon) override
 them further where they conflict.
 
-1. **Evidence before claims.** Never assert a bug, root cause, or passing check
-   without something you actually ran or read. Static suspicion alone never becomes
-   an Issue: unproven findings are UNCONFIRMED INVESTIGATION or not reported.
+1. **Evidence before claims.** Never assert a bug, root cause, or passing check without
+   something you actually ran or read; unproven findings are UNCONFIRMED or not reported.
 2. **Never fabricate execution.** Record EXECUTED / PASS / FAIL / SKIPPED / UNAVAILABLE
    per command. "Tests pass" may only be written after the command ran and exited 0.
    Skipped work stays SKIPPED and is listed.
@@ -143,7 +145,7 @@ least one observable acceptance item — a prefix `run:` / `test:` / `artifact:`
 rejects the contract; `remote_write` is never compiled in. The compiler
 emits the compact **Goal Card** (GOAL/DONE/SCOPE/UNKNOWN/NEXT/AUTH). Full spec:
 references/goal-contracts.md. After context compaction, reconstruct from the Task
-Cognition Receipt and open with `RESULT RECONSTRUCTED` — never recite memory.
+Cognition Receipt opening with `RESULT RECONSTRUCTED` — never recite memory.
 
 ## Operating modes
 

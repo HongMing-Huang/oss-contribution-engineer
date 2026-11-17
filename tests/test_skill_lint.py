@@ -132,6 +132,22 @@ def test_cli_surface_documented():
     assert not missing, "CLI offers but SKILL.md never mentions: %s" % missing
 
 
+def test_metadata_version_matches_changelog():
+    """Market-survey round (2026-11-18) found metadata.version stuck at 2.0.0
+    while CHANGELOG reached 2.3.0 — a release-surface drift no other lint
+    covered."""
+    fm_text = re.match(r"^---\n(.*?)\n---\n", SKILL.read_text(), re.S)
+    assert fm_text, "frontmatter missing"
+    m = re.search(r'^\s+version:\s*"?([^"\n]+)"?\s*$', fm_text.group(1), re.M)
+    assert m, "metadata.version missing (nested under metadata:)"
+    ver = m.group(1).strip()
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    m = re.search(r"^## \[([0-9.]+)\]", changelog, re.M)
+    assert m, "no version heading in CHANGELOG.md"
+    assert ver == m.group(1), (
+        "SKILL.md metadata.version %s != CHANGELOG latest %s" % (ver, m.group(1)))
+
+
 def test_inline_script_invocations_use_real_subcommands():
     """Real-usage defect class (lobehub session, problems 4/5): SKILL.md
     showed script invocations that the real CLI rejects — missing or stale

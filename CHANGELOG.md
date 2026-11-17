@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.3.1] — 2026-11-18
+
+Market/cross-tool survey round (9 comparable projects measured; full report
+in the private companion repo `docs/market-survey-2026-11-18.md`):
+
+### Fixed
+- Degraded mode now specified: on tools without python3/git (chat-only or
+  restricted sandbox), skip scripts and gates and apply
+  contribution-doctrine + maintainer-etiquette as plain discipline,
+  stating that no evidence gate ran (previously: silent dead end)
+- metadata.version drifted (2.0.0 vs CHANGELOG 2.3.0) — fixed; a new lint
+  check (`test_metadata_version_matches_changelog`) keeps frontmatter
+  version and CHANGELOG in lockstep
+- Windows note: compatibility field documents the `python`/py-launcher
+  fallback when the `python3` alias is absent
+
 ## [2.3.0] — 2026-11-05
 
 Standardized problem-digging harness — answers "where do the real problems
