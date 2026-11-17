@@ -4,7 +4,7 @@ description: Drive real, maintainer-respectful open-source contributions with a 
 license: MIT
 compatibility: Requires python3 and git on PATH (Windows: `python` via the py launcher if the `python3` alias is absent). Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
 metadata:
-  version: "2.3.2"
+  version: "2.4.0"
   author: "HongMing-Huang"
   philosophy: "AI may accelerate investigation, testing, implementation, and review, but it must never replace evidence, engineering judgment, or human responsibility."
   context_law: "Cognition selects. Source proves. Tests verify. History explains."
@@ -131,6 +131,19 @@ them further where they conflict.
 
 Anything beyond READ_ONLY must be visible to the user as a decision, not a side effect.
 Before any WORKTREE_EDIT on a fresh repository, run recon (below) first.
+
+## Contributor calibration (adapts the conversation, never the evidence)
+
+Gauge the user's familiarity with this codebase/subsystem once per session and record
+it: `$S <repo> calibrate --familiarity new|some|expert [--source asked|inferred]`.
+Unset → infer from the conversation (their vocabulary, their questions); ask ONE short
+question only when signals conflict, never interrogate. Effects are judgment calls:
+`new` → teach-first walkthroughs (one concept at a time with the real code), smaller
+proposed steps, more context in drafts; `some` → the standard flow; `expert` → terse
+walkthroughs, decisions surfaced instead of tutorials, DEFERRED understanding is
+respected sooner. **Calibration changes explanation volume and step size only — every
+gate, evidence requirement and hard rule is identical at every level.** Re-calibrate
+when the user's signals change.
 
 ## Goal Intelligence
 

@@ -751,6 +751,34 @@ def check_open_pr_receipt(repo, s):
 
 # ------------------------------------------------------------------ commands
 
+def cmd_calibrate(repo: Path, args) -> int:
+    """Contributor calibration (SKILL.md § Contributor calibration): records
+    the user's familiarity so explanation depth and step size adapt to it.
+    Deliberately NOT a gate — evidence requirements are identical at every
+    level; this only tunes teaching volume. Re-running overwrites."""
+    if args.familiarity not in ("new", "some", "expert"):
+        print("error: --familiarity must be new|some|expert", file=sys.stderr)
+        return 2
+    s = load_session(repo)
+    s["calibration"] = {"familiarity": args.familiarity,
+                        "source": args.source or "inferred",
+                        "at": now()}
+    s["history"].append({"at": now(), "event": "calibrate",
+                         "familiarity": args.familiarity})
+    save_session(repo, s)
+    print("calibration: %s (source %s)" % (args.familiarity, s["calibration"]["source"]))
+    if args.familiarity == "new":
+        print("effect: teach-first walkthroughs, one concept at a time with the "
+              "real code; smaller proposed steps; more context in drafts")
+    elif args.familiarity == "expert":
+        print("effect: terse walkthroughs; surface decisions, not tutorials; "
+              "DEFERRED understanding respected sooner")
+    else:
+        print("effect: standard flow")
+    print("evidence requirements unchanged — gates are identical at every level")
+    return 0
+
+
 def cmd_init(repo: Path, args) -> int:
     if session_path(repo).exists() and not args.fresh:
         print("error: session exists (%s); use --fresh" % session_path(repo), file=sys.stderr)
@@ -1902,6 +1930,13 @@ def main() -> int:
 
     p = sub.add_parser("status")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("calibrate",
+                       help="record contributor familiarity (new|some|expert) — "
+                            "adapts teaching volume, never evidence gates")
+    p.add_argument("--familiarity", required=True, choices=["new", "some", "expert"])
+    p.add_argument("--source", choices=["asked", "inferred"], default="inferred")
+    p.set_defaults(func=cmd_calibrate)
 
     p = sub.add_parser("advance")
     p.add_argument("--to", required=True)

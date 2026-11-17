@@ -4,6 +4,15 @@ The engineering principles this skill encodes, paraphrased from mature projects.
 once per repository. These are principles, not formatting rules — the target
 repository's own conventions take precedence over anything here.
 
+**Contents:** [1. Real problems](#1-solve-real-problems-not-hypothetical-ones) ·
+[2. Reproduce](#2-reproduce-before-you-claim) · [3. One small change](#3-one-logical-change-small) ·
+[4. Tests](#4-tests-are-part-of-the-change) · [5. Static checks](#5-static-checks--behavioral-correctness-and-neither-replaces-judgment) ·
+[6. Review is falsification](#6-review-is-falsification--and-part-of-development-not-after-it) ·
+[7. Descriptions](#7-descriptions-are-permanent-records--write-for-future-maintainers) ·
+[8. Maintainer time](#8-respect-maintainer-time) · [9. AI duties](#9-ai-assisted-work-has-extra-duties) ·
+[10. Stopping](#10-stopping-is-a-contribution) · [11. Problem first](#11-the-problem-comes-first--before-the-implementation) ·
+[12. Understanding](#12-understanding-is-part-of-the-submission) · [Freeze note](#doctrine-freeze-v53)
+
 ## 1. Solve real problems, not hypothetical ones
 
 Every patch traces to a real problem with observable impact (Linux kernel,

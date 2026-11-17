@@ -6,6 +6,15 @@
 > worth merging *before* opening the diff. No AI-style change logs: "Implemented X",
 > "Updated Y", "Added tests" without saying why are rejected — every section answers
 > "why", not just "what". State what was tested — and what was not.
+>
+> **Adapt, don't fill.** These sections are the floor of what a reviewer needs, not a
+> form to complete. If a section would add no information for THIS change, cut it; if
+> this project's contributors write differently (pr_style.py profile), write like them.
+> A draft that reads like a filled-in form is a defect, not compliance.
+>
+> **Grounded, not invented.** Every number, count and claim in "Tests executed" comes
+> from a Validation Report / evidence-manifest artifact — a claim with no artifact
+> behind it is deleted, never softened into a hedge.
 
 ## Problem
 <!-- the underlying problem first (kernel: "Describe your problem. … there must be an

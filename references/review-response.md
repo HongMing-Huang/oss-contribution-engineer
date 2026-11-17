@@ -5,6 +5,10 @@ The workflow does not end when a PR is opened. Review is part of development (ke
 return"; Git: "Defend your design decisions on the list first"). This file governs the
 loop from "review received" to "resolved". Worksheet artifact: assets/review-response.md.
 
+**Contents:** [The loop](#the-loop) · [Concern taxonomy](#concern-taxonomy) ·
+[Response discipline](#response-discipline) · [Iteration summary](#iteration-summary-every-v2v3) ·
+[Outcome classification](#upstream-outcome-classification-terminal-evidence-bound)
+
 ## The loop
 
 1. **Review received.** Read every comment before reacting. Note which are questions and

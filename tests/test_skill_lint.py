@@ -133,9 +133,28 @@ def test_cli_surface_documented():
     # workflow ones every agent must know about
     must_document = {"investigate", "note", "read-source", "evidence",
                      "read-rules", "refresh-context", "explain-blocker",
-                     "resume", "report", "status", "advance", "init"}
+                     "resume", "report", "status", "advance", "init",
+                     "calibrate"}
     missing = sorted(s for s in must_document if s in names and s not in text)
     assert not missing, "CLI offers but SKILL.md never mentions: %s" % missing
+
+
+def test_every_reference_linked_and_tocd():
+    """Anthropic authoring best practices: every reference file should be
+    linked from SKILL.md (no orphan depth), and reference files over 100
+    lines carry a contents line at the top."""
+    text = SKILL.read_text()
+    links = set(re.findall(r"references/[\w\-./]+", text))
+    orphans = sorted(
+        p.name for p in (ROOT / "references").glob("*.md")
+        if f"references/{p.name}" not in links)
+    assert not orphans, "references never linked from SKILL.md: %s" % orphans
+    for p in (ROOT / "references").glob("*.md"):
+        n = p.read_text().count("\n") + 1
+        if n > 100:
+            head = "\n".join(p.read_text().splitlines()[:12])
+            assert "**Contents:**" in head, \
+                "%s is %d lines but has no **Contents:** TOC in its header" % (p.name, n)
 
 
 def test_metadata_version_matches_changelog():

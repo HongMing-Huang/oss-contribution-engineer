@@ -3,6 +3,12 @@
 Maintainer attention is the scarcest resource in open source. Every artifact this skill
 produces should shorten their review, not extend it.
 
+**Contents:** [Before commenting](#before-commenting-id-like-to-work-on-this) ·
+[Commenting discipline](#commenting-discipline) · [PR preparation](#pr-preparation) ·
+[Responding to review](#responding-to-review) · [What never to do](#what-never-to-do) ·
+[Voice](#voice--write-like-a-senior-engineer-of-this-project) ·
+[PR style profiling](#study-the-projects-contributors-first-pr-style-profiling)
+
 ## Before commenting "I'd like to work on this"
 
 Investigate enough to say, in two or three sentences:

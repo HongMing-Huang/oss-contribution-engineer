@@ -237,3 +237,19 @@ def test_note_kind_test_persists(repo):
     st = json.loads((repo / ".oss-contrib-evidence" / "investigation.json")
                     .read_text())
     assert st["test"][0]["text"] == "pkg tests: 272 pass"
+
+
+# ------------------------------------------------------------------- calibrate
+def test_calibrate_records_familiarity_and_refuses_bad_value(repo):
+    _init_session(repo)
+    rc = cs.cmd_calibrate(repo, _ns(familiarity="novice", source=None))
+    assert rc == 2  # bad value refused
+    rc = cs.cmd_calibrate(repo, _ns(familiarity="new", source="asked"))
+    assert rc == 0
+    s = cs.load_session(repo)
+    assert s["calibration"] == {"familiarity": "new", "source": "asked",
+                                "at": s["calibration"]["at"]}
+    # recalibration overwrites (adapts as the user's signals change)
+    rc = cs.cmd_calibrate(repo, _ns(familiarity="expert", source=None))
+    assert rc == 0
+    assert cs.load_session(repo)["calibration"]["familiarity"] == "expert"

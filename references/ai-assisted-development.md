@@ -3,6 +3,11 @@
 This skill produces AI-assisted contributions. Mature projects have converged on rules
 for this; violating them gets submissions rejected without review.
 
+**Contents:** [The 2025–26 "AI slop" wave](#the-202526-ai-slop-wave-grounding-not-decoration) ·
+[Ownership](#ownership) · [Legal certification](#legal-certification) ·
+[Disclosure](#disclosure) · [Truth in testing](#truth-in-testing) ·
+[Authorization boundaries](#authorization-boundaries) · [Auditability](#auditability)
+
 ## The 2025–26 "AI slop" wave (grounding, not decoration)
 
 The dominant community complaint is **cost asymmetry**: AI made generating
@@ -11,10 +16,21 @@ its security reports were AI-generated false positives and retired its $90K bug
 bounty over it ([curl AI guidelines, May 2025](https://curl.se/mail/lib-2025-05/0013.html));
 Godot and ITK maintainers reported being overwhelmed by low-quality AI PRs; OCaml
 maintainers rejected a 13,000-file AI PR outright; GitHub began prototyping
-maintainer-side controls against slop volume (Feb 2026). The kernel's position
-(Torvalds, 2026): AI-assisted code is fine when it clears the quality bar, "slop"
-is rejected, and the human takes responsibility. The rules below exist so that a
-run of this skill is on the right side of every one of those lines.
+maintainer-side controls against slop volume (Feb 2026). The human cost is real:
+a long-time kernel maintainer stepped down after being inundated with
+AI-generated submissions (Oct 2026).
+
+**The kernel's position moved — and that is the lesson.** Jan 2025: the kernel
+required LLM disclosure (`Assisted-by:`). 2026: Torvalds called banning
+AI-generated code "utterly stupid" — tools are a poor proxy for whether a
+contributor understands their work; the failing mode he names is **"vibe
+coding": submitting code you do not understand**, not using assistance. Oct
+2026: the kernel **dropped the mandatory disclosure rule**, and Torvalds posted
+his own first LLM-assisted patch (a synthetic test, reported ~23× faster).
+The bar never moved: quality, understanding, human ownership. **Policies
+change; recon must read the project's CURRENT AI policy, never assume one
+from memory or from this file.** The rules below exist so that a run of this
+skill is on the right side of every one of those lines.
 
 **Serial-contribution rule (the missing rule the slop wave exposed):** one open
 contribution at a time per project, resolved or closed before the next opens; and
@@ -51,22 +67,23 @@ before authorizing. A flood of individually-acceptable PRs is still slop.
 
 ## Disclosure
 
-- Respect the repository's AI policy (recon surfaces it: CONTRIBUTING sections,
-  AGENTS.md, AI contribution policies). Kernel-style projects require an
-  `Assisted-by: LLM` tag plus disclosure of tools, prompts (or summaries), affected
-  parts, and how it was tested — there, disclose exactly as required or stop.
-  Other projects may ban AI contributions outright — then the answer is to stop
-  and tell the user.
+- Respect the repository's CURRENT AI policy (recon surfaces it: CONTRIBUTING
+  sections, AGENTS.md, AI contribution policies) — **current, as of this run**:
+  policies reverse (the kernel required disclosure Jan 2025 and dropped it Oct
+  2026). Where disclosure is required, disclose exactly as required (tools,
+  prompts or summaries, affected parts, testing) or stop. Projects that ban AI
+  contributions outright — the answer is to stop and tell the user.
 - **Default posture — a mature engineer, not a labeled bot.** When the policy is
   silent (most projects): NO unsolicited AI markers. No "generated with…",
   no AI Co-authored-by, no preamble about tooling. The human owns every line and
-  takes full responsibility (Linus's bar: quality + human ownership, not tooling
-  confession); a competent human using assistance is the community norm. Volunteered
+  takes full responsibility (Linus's bar: quality + understanding + ownership —
+  he opposes "vibe coding", not assistance, and shipped an LLM-assisted patch
+  himself); a competent human using assistance is the community norm. Volunteered
   AI labels are themselves noise maintainers dislike.
-- Two hard lines that never bend: if a project's policy requires disclosure,
-  disclose; if a maintainer asks directly whether AI was involved, answer honestly.
-  Misrepresenting authorship when asked is the one thing that turns normal
-  assistance into a ban.
+- Two hard lines that never bend: if a project's current policy requires
+  disclosure, disclose; if a maintainer asks directly whether AI was involved,
+  answer honestly. Misrepresenting authorship when asked is the one thing that
+  turns normal assistance into a ban.
 - **Bug/security reports must be "security informed"** (curl's term): the submitter
   must actually understand the issue they report. An AI-suggested vulnerability the
   human cannot explain — reproducer, impact, affected path — is not reported. This is

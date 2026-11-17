@@ -4,6 +4,9 @@ Research basis: v3/research/04 (spec), 04b (protocol), 03 §9 (ARB), 03 §2 (SWE
 interface lesson). The Goal Compiler separates **what the user wants** from **what the
 agent guesses will satisfy it**; an implementation hypothesis is never the goal.
 
+**Contents:** [When](#when) · [Contract rules](#contract-rules) ·
+[Communication protocol](#communication-protocol-compact-blocks-no-status-prose)
+
 ## When
 
 Compile a contract for every non-trivial task, right after the request is understood

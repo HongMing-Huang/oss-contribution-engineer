@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.4.0] — 2026-11-18
+
+Learning round grounded in Anthropic's latest skill-authoring guidance and
+Linus Torvalds's 2026 statements on AI contributions.
+
+### Added
+- **Contributor calibration** (`calibrate --familiarity new|some|expert`):
+  the workflow now adapts to the user's basis — teach-first walkthroughs and
+  smaller steps for newcomers, terse decision-surfacing for experts. It tunes
+  explanation volume and step size ONLY; every gate and evidence requirement
+  is identical at every level (deliberately not a mechanical tier)
+- Lint: every `references/*.md` must be linked from SKILL.md; reference
+  files over 100 lines must carry a `**Contents:**` TOC (per Anthropic's
+  reference-organization rules) — 5 files got TOCs
+
+### Changed
+- **Doctrine correction (the kernel moved under us)**: the Linux kernel
+  required LLM disclosure in Jan 2025 and DROPPED it in Oct 2026; Torvalds
+  called banning AI "utterly stupid", opposes "vibe coding" (code the
+  contributor does not understand) rather than assistance itself, and posted
+  his own first LLM-assisted patch. references/ai-assisted-development.md
+  now records the shift and its lesson: policies reverse — recon must read
+  the project's CURRENT AI policy, never assume it from memory
+- PR template: "Adapt, don't fill" (sections are a floor, not a form — a
+  draft that reads like a filled-in form is a defect) and "Grounded, not
+  invented" (every claim cites a validation artifact; unbacked claims are
+  deleted, not hedged)
+
 ## [2.3.2] — 2026-11-18
 
 Design-optimization round, evidence from a body-structure study of the
