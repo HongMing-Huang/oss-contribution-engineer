@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.3.2] — 2026-11-18
+
+Design-optimization round, evidence from a body-structure study of the
+leading skill repos (anthropics/skills official set, obra/superpowers 319k★,
+wshobson/agents 42.6k★):
+
+### Changed
+- SKILL.md body slimmed 37.3KB/499 lines → **30.6KB/414 lines** (activation
+  cost ~9.3k → ~7.7k tokens, −18%) by moving detail that references/ already
+  carried (or now carries): context-acquisition pipeline stages (pointer to
+  references/context-acquisition.md et al.), the full communication block
+  set (now in references/goal-contracts.md § Communication protocol), and
+  the four strategy paths (new references/contribution-workflows.md). Body
+  now holds only the runtime contract, gates, rules and indexes — per the
+  superpowers principle: enforce mechanics with scripts, keep prose for
+  judgment calls
+- Body byte budget (≤32,000) added to the lint, locking the slimming
+
 ## [2.3.1] — 2026-11-18
 
 Market/cross-tool survey round (9 comparable projects measured; full report

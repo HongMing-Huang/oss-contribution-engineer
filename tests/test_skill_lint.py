@@ -59,6 +59,12 @@ def test_body_line_budget():
     body = re.sub(r"^---\n.*?\n---\n", "", text, count=1, flags=re.S)
     lines = body.count("\n") + 1
     assert lines <= 500, "SKILL.md body is %d lines (> 500 cap)" % lines
+    # byte budget: ecosystem norm for workflow-discipline skill bodies is
+    # ~3-20KB (superpowers 17-skill set) to 33KB (official skill-creator);
+    # the 2026-11-18 design round slimmed ours 37.3KB→30.6KB by moving
+    # duplicated detail into references/ — this locks that win
+    nbytes = len(body.encode())
+    assert nbytes <= 32_000, "SKILL.md body is %d bytes (> 32,000 budget)" % nbytes
 
 
 def test_referenced_paths_exist():

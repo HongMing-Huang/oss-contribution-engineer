@@ -81,6 +81,34 @@ NOT VERIFIED  <SKIPPED/UNAVAILABLE levels + unchecked areas>
 REMAINING RISK <...>
 ```
 
+**Contribution-workflow block set** (completes the protocol for the patch and
+review phases; each block 2–6 lines, facts with references — never status prose):
+
+```
+INVESTIGATION   FOUND: <what was located, file:line>
+                EVIDENCE: <reproducer output / manifest artifact refs>
+                IMPACT: <who is affected, user-visible effect>
+                NEXT: <one next step>
+
+BEFORE PATCH    PATCH INTENT: <the change in one sentence>
+                WHY: <why this location and approach>
+                EXPECTED FILES: <paths from the PATCH PLAN>
+                NON-GOALS: <adjacent things deliberately untouched>
+                VALIDATION PLAN: <commands, incl. expected SKIPPED/UNAVAILABLE>
+
+AFTER PATCH     RESULT: <GREEN / back-to-PATCH / stopped, one line>
+                PROOF: <RED + GREEN artifact refs>
+                WHAT CHANGED: <files and behavior, briefly>
+                WHAT DID NOT CHANGE: <explicit>
+                REMAINING RISK: <what could still regress>
+
+DURING REVIEW   REVIEWER CONCERN: <paraphrased, categorized — what worries the reviewer>
+                CODE CONTEXT: <which code/design assumption the comment refers to>
+                ASSESSMENT: <agree / partially agree / disagree — and why>
+                EVIDENCE: <what source, test, history or contract was re-checked, refs>
+                ACTION: <what will change, or why no change is appropriate — response draft>
+```
+
 Every EVIDENCE line references something observable. After context compaction, the
 first message is a RECONSTRUCTED block built from the Task Cognition Receipt — never a
 recitation of remembered state (see context-packing.md).

@@ -4,7 +4,7 @@ description: Drive real, maintainer-respectful open-source contributions with a 
 license: MIT
 compatibility: Requires python3 and git on PATH (Windows: `python` via the py launcher if the `python3` alias is absent). Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
 metadata:
-  version: "2.3.1"
+  version: "2.3.2"
   author: "HongMing-Huang"
   philosophy: "AI may accelerate investigation, testing, implementation, and review, but it must never replace evidence, engineering judgment, or human responsibility."
   context_law: "Cognition selects. Source proves. Tests verify. History explains."
@@ -280,36 +280,13 @@ the profile exists (references/repository-recon.md).
 ## Adaptive Repository Context Acquisition
 
 Never load a large repository into context. The law: **cognition selects, source
-proves, tests verify, history explains.** Understanding is hierarchical (L0 project →
-L1 subsystem → L2 component → L3 object → L4 current source); a task starts at L0/L1
-and descends only through relevant areas. The `investigate` op does all of this;
-the internals, for reference:
-
-1. **Backend** (from recon, automatic + visible in investigate output): AOCI runtime
-   receipt when a COMPLETE cognition session exists; AOCI_FILE when `aoci.*.txt`
-   volumes re-hash aligned against `.aoci/baseline.json`; Serena/LSP when configured;
-   python-ast for Python repos; else lexical LIGHTWEIGHT_FALLBACK. Never regenerate a
-   whole-repo semantic index when an aligned AOCI index exists; cognition claims are
-   leads, never truth.
-2. **Route retrieval by task type** — no universal ranking policy. Signals: lexical
-   (BM25), path, symbol, test-relations, git history, cognition, bounded graph
-   expansion — fused by RRF with task priors. The router may return
-   NO_RELEVANT_LOCAL_CONTEXT (abstention report with factors; scores are ordering
-   evidence, never calibrated probabilities).
-3. **Plan before reading, pack as spans**: Task Context Plan (radius tiers with
-   reasons, token allocation, visible exclusions); Radius 1 = targets + direct strong
-   relations + direct tests + contracts; expand to Radius 2/3 only with a recorded
-   reason naming what R1 failed to establish. The Context Pack delivers bounded
-   symbol **spans** with digest + why — not whole files.
-4. **Enforce budgets**: at soft budget rerank, prune to spans, externalize to the
-   receipt, drop superseded observations; never drop goal/done_when/safety
-   constraints/blockers/source identities; silent truncation is banned.
-5. **Verify sources**: every real read is digest-bound; re-hashing flags CHANGED
-   files — never mix obsolete source with current source. Before editing any object,
-   read its current source; no summary, embedding, graph, or memory substitutes.
-
-Method and anti-patterns: references/context-acquisition.md, retrieval-strategies.md,
-context-packing.md; evaluation: references/retrieval-evaluation.md.
+proves, tests verify, history explains**; understanding is hierarchical (L0 project →
+L4 current source) and a task descends only through relevant areas. The `investigate`
+op runs the whole pipeline — backend selection (automatic and visible: AOCI
+runtime/file, Serena/LSP, python-ast, lexical fallback), task-type routing, span
+packing with digests, budget enforcement, source verification. Pipeline stages,
+anti-patterns and evaluation: references/context-acquisition.md,
+retrieval-strategies.md, context-packing.md, retrieval-evaluation.md.
 
 ## Evidence and validation
 
@@ -340,37 +317,13 @@ explicit behavior, not snapshots.
 
 ## Progress communication
 
-Report progress in short standardized blocks — never status essays. This is the
-contribution-workflow extension of the Goal Contract communication protocol
-(references/goal-contracts.md): the compiler emits the GOAL card and the
-FOUND/EVIDENCE/IMPACT/NEXT blocks; PATCH INTENT is the block form of the PATCH PLAN
-(assets/implementation-plan.md), and the blocks below complete the set for the patch and
-review phases. Each block is 2–6 lines and states facts with references.
-
-```
-INVESTIGATION   FOUND: <what was located, file:line>
-                EVIDENCE: <reproducer output / manifest artifact refs>
-                IMPACT: <who is affected, user-visible effect>
-                NEXT: <one next step>
-
-BEFORE PATCH    PATCH INTENT: <the change in one sentence>
-                WHY: <why this location and approach>
-                EXPECTED FILES: <paths from the PATCH PLAN>
-                NON-GOALS: <adjacent things deliberately untouched>
-                VALIDATION PLAN: <commands, incl. expected SKIPPED/UNAVAILABLE>
-
-AFTER PATCH     RESULT: <GREEN / back-to-PATCH / stopped, one line>
-                PROOF: <RED + GREEN artifact refs>
-                WHAT CHANGED: <files and behavior, briefly>
-                WHAT DID NOT CHANGE: <explicit>
-                REMAINING RISK: <what could still regress>
-
-DURING REVIEW   REVIEWER CONCERN: <paraphrased, categorized — what worries the reviewer>
-                CODE CONTEXT: <which code/design assumption the comment refers to>
-                ASSESSMENT: <agree / partially agree / disagree — and why>
-                EVIDENCE: <what source, test, history or contract was re-checked, refs>
-                ACTION: <what will change, or why no change is appropriate — response draft>
-```
+Report in the standard short blocks — never status essays — completing the Goal
+Contract protocol: INVESTIGATION (FOUND/EVIDENCE/IMPACT/NEXT), BEFORE PATCH
+(PATCH INTENT/WHY/EXPECTED FILES/NON-GOALS/VALIDATION PLAN), AFTER PATCH
+(RESULT/PROOF/WHAT CHANGED/WHAT DID NOT CHANGE/REMAINING RISK), DURING REVIEW
+(REVIEWER CONCERN/CODE CONTEXT/ASSESSMENT/EVIDENCE/ACTION). Exact formats and
+when each fires: references/goal-contracts.md § Communication protocol. 2–6
+lines each; every EVIDENCE line references something observable.
 
 ## Scope audit and diff budget
 
@@ -387,54 +340,15 @@ Method: references/patch-design.md (§ diff budget, § scope audit).
 
 ## Workflows
 
-### Strategy A — existing issue (Mode 2 → 4 → 5)
+| Situation | Path | Detail |
+|---|---|---|
+| Existing issue | Mode 2 → 4 → (5) | references/contribution-workflows.md § Strategy A |
+| Bug hunt (nothing reported) | Mode 3 → dedupe → Candidate Report | § Strategy B |
+| Confirmed fix | RED→…→PR_READY per state machine; pr_style profile before the draft | § Fix path |
+| Review response | classify → 5-part block → fix or evidence-backed defense | § Review-response path |
 
-1. Recon (above).
-2. Triage the issue: body, labels, assignees, comments, linked PRs, author branches,
-   recent commits in the area, maintainer responses, duplicate/closed attempts.
-   `duplicate_work_scan.py commands OWNER/REPO#N` prints the exact `gh` capture
-   commands; `parse-issue` / `parse-search` / `bundle` aggregate the captured JSON
-   (a platform tool may substitute; record which).
-3. Classify per the DEDUPLICATE gate. If not GOOD_CANDIDATE/AVAILABLE → report and stop.
-4. Investigation Only on the reported behavior: reproduce or disprove (Mode 4).
-5. If confirmed and the user asks for a fix: Fix path (below) from RED onward.
-6. PR Preparation only after REVIEW passes.
-
-### Strategy B — bug hunt (Mode 3)
-
-1. Recon + architecture read; skim recent bug-fix history for violated invariants.
-2. Hunt with the structured lenses in references/bug-hunting.md: cross-implementation
-   parity (sync/async, streaming/non-streaming, provider A vs B, platform), sibling paths
-   of recent fixes, error-handling and cleanup paths, resource lifecycles, protocol
-   contract comparison against version-appropriate docs, missing/skipped negative tests.
-3. Pick one candidate; run the DEDUPLICATE gate (issues + PRs + history).
-4. Build a reproducer; fill the Evidence Record (references/proof-standard.md).
-5. Report the Candidate Report (assets/candidate-report.md). Patching happens only if
-   the user then requests Mode 5, entering at RED.
-
-### Fix path (Mode 5)
-
-RED → PATCH → GREEN → REGRESSION → CONTRIBUTOR_UNDERSTANDING → REVIEW → PR_READY,
-exactly per the state machine. Produce assets/implementation-plan.md (PATCH PLAN) before
-editing production code, assets/change-walkthrough.md after REGRESSION, and
-assets/review-report.md from the adversarial pass. Before drafting the PR, profile how
-this project's own contributors write merged PRs (`pr_style.py commands` → capture →
-`profile`) and mirror that profile — title style, body length, commit conventions —
-instead of any generic template. Prepare, never publish, the PR draft
-(assets/pull-request-template.md) — publishing needs REMOTE_WRITE.
-
-### Review-response path (Mode 9)
-
-A published PR receiving review comments does not end the run. Classify each concern
-(correctness, design, scope, test coverage, compatibility, style, documentation,
-maintainability, question), inspect the relevant source and evidence, then explain it
-to the contributor with the 5-part review block before any upstream reply is drafted.
-Then either modify (re-enter PATCH; affected head-bound evidence is STALE and must be
-re-run) or prepare a respectful evidence-backed response — never automatic agreement,
-and never a blind rewrite: a design objection is resolved in discussion first. Push
-fixes as new commits (not squashed); signal readiness explicitly (re-request / PTAL);
-classify the terminal outcome with upstream_state.py — MERGED is the only success.
-Full protocol: references/review-response.md; worksheet: assets/review-response.md.
+The DEDUPLICATE gate and STOPPING classifications apply to every strategy; a
+non-GOOD_CANDIDATE classification reports and stops.
 
 ## Output artifacts
 
