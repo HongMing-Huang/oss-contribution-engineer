@@ -192,3 +192,22 @@ def test_pr_writing_rules_operationalized():
     assert "giving orders to the codebase" in \
         (refs / "maintainer-etiquette.md").read_text()  # kernel imperative rule
     assert "≲300" in (refs / "patch-design.md").read_text()  # lines budget
+
+
+# ------------------------------------------------------------------- help-first
+def test_read_rules_works_without_session(tmp_path):
+    """Help-first repositioning: seeing the contribution rules requires NO
+    session, NO goal contract, and writes NOTHING into the repository."""
+    subprocess.run(["/usr/bin/env", "git", "init", "-q", str(tmp_path)],
+                   capture_output=True)
+    git(tmp_path, "config", "user.email", "t@t.co")
+    git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "CONTRIBUTING.md").write_text("# C\nsign commits\n")
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-qm", "i")
+    r = py(str(SESSION), str(tmp_path), "read-rules")
+    assert r.returncode == 0, r.stderr
+    assert "CONTRIBUTING.md" in r.stdout
+    assert "optional" in r.stdout  # session offered as option, not prerequisite
+    assert not (tmp_path / ".oss-contrib-evidence").exists(), \
+        "help-first: no files may be written without a session"

@@ -4,7 +4,7 @@ description: Drive real, maintainer-respectful open-source contributions with a 
 license: MIT
 compatibility: Requires python3 and git on PATH (Windows: `python` via the py launcher if the `python3` alias is absent). Optional gh CLI (authenticated) or a platform GitHub tool for issue/PR lookups. All bundled scripts are stdlib-only Python 3.
 metadata:
-  version: "2.4.1"
+  version: "2.4.2"
   author: "HongMing-Huang"
   philosophy: "AI may accelerate investigation, testing, implementation, and review, but it must never replace evidence, engineering judgment, or human responsibility."
   context_law: "Cognition selects. Source proves. Tests verify. History explains."
@@ -21,13 +21,21 @@ the scarcest resource. It is not an "auto-generate PRs" skill.
 already fixed, duplicated, or a design question, ending with that conclusion and the
 evidence behind it is a completed run — often the best possible run.
 
-## Runtime (invoke this; do not re-derive the workflow from memory)
+## Runtime (invoke this; the help-first toolkit; gates only when opted in)
+
+**Help-first, à la carte.** A toolkit that helps, not a process to pass.
+Every script works standalone (see Script index) — no session, contract or
+gate. The gated session (state machine, evidence, receipts) is **opt-in
+help** for a full run with a tamper-evident record; it protects evidence
+and upstream, NEVER blocks answering, analyzing or drafting. Unsure what
+the user wants? Do the helpful thing (look, analyze, draft) and offer the
+session as an option, not a prerequisite.
 
 `scripts/contribution_session.py` is the executable spine AND the Agent-facing
 workflow. After `init`, drive the task through the production operations below —
-you should never need to call `retrieval_router.py`, `localize_two_stage.py`,
-`context_planner.py`, `budget_governor.py`, or `repository_intelligence.py`
-directly; those are implementation modules behind this surface.
+never call `retrieval_router.py`, `localize_two_stage.py`, `context_planner.py`,
+`budget_governor.py`, or `repository_intelligence.py` directly; those are
+implementation modules behind this surface.
 
 ```bash
 S=python3 <SKILL_DIR>/scripts/contribution_session.py

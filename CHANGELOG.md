@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.4.2] — 2026-11-18
+
+**Help-first repositioning.** User review: "not a tool that locks the whole
+process down — we provide tools that help." The toolkit now says and does
+exactly that:
+
+- SKILL.md Runtime section opens with the help-first contract: every script
+  works standalone with no session/contract/gate; the gated session is
+  opt-in help for full runs with a tamper-evident record; gates protect
+  evidence and upstream and NEVER block answering, analyzing or drafting
+- `read-rules` works session-less: prints the binding rules list with zero
+  files written (previously it demanded init + a Goal Contract just to LOOK
+  at the rules — the exact over-gating this round removes)
+- Regression test pins: session-less read-rules writes nothing; the SKILL.md
+  help-first statement is lint-covered via the body budget
+
 ## [2.4.1] — 2026-11-18
 
 PR-writing quality round: the kernel's SubmittingPatches and Google's CL

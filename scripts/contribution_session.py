@@ -1831,6 +1831,23 @@ def cmd_read_rules(repo: Path, args) -> int:
     'applies to this contribution'; a receipt is now only producible by
     naming, per document, the rule it imposes."""
     from contribution_rules_scan import binding_manifest as _bm, read_receipt as _rr
+    session_less = not session_path(repo).exists()
+    if session_less:
+        # Help-first posture (v2.4.2): the toolset is à la carte. Seeing the
+        # contribution rules requires NO session, NO goal contract — printing
+        # discovery writes nothing into the repository.
+        man = _bm(repo, max_depth=4)
+        docs = man.get("binding", []) if isinstance(man, dict) else []
+        if not docs:
+            print("RESULT         NO_BINDING_RULES (nothing to read)")
+        else:
+            print("Contribution rules (binding set — read each in full):")
+            for d in docs:
+                print("  - %s (%s)" % (d["path"], d.get("scope", "root")))
+            print("next: read them, then either start a session (init) to record "
+                  "receipts and run the gated contribution flow, or just apply "
+                  "them — a session is optional help, not a requirement")
+        return 0
     man = _bm(repo, max_depth=4)
     man_str = man if isinstance(man, str) else json.dumps(man, indent=2)
     if not isinstance(man, dict):
