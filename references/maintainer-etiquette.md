@@ -40,6 +40,14 @@ design question instead.
   description rules; assets/pull-request-template.md). Problem before implementation —
   the description must let a reviewer decide the change is worth merging before opening
   the diff.
+- Title/subject mechanics (defaults when the pr_style profile doesn't dictate otherwise):
+  imperative mood ("Delete the legacy endpoint", never "Deleting…" or "This PR deletes…"
+  — kernel: write "as if you are giving orders to the codebase"); subject ≤72 characters
+  and able to stand alone (kernel: 70–75); blank line before the body; body wrapped
+  (~75 columns). Tags/prefixes only if the project uses them.
+- Optimizations carry numbers: benchmark results with methodology, and the non-obvious
+  costs (kernel: "include numbers that back them up… describe the non-obvious costs").
+  A "faster" claim with no measured number is not a description, it's a hope.
 - Follow the repository's PR template and commit conventions exactly (from recon).
 - Include changelog entries if the project requires them; note the issue with the
   project's preferred keyword ("Fixes #N" vs "Closes #N").

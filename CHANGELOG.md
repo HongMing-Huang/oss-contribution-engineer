@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.4.1] — 2026-11-18
+
+PR-writing quality round: the kernel's SubmittingPatches and Google's CL
+description rules audited against every PR-drafting surface (template,
+etiquette, patch-design) and operationalized where doctrine had them but
+draft time didn't:
+
+- title/subject mechanics as defaults (imperative mood — kernel: write "as
+  if you are giving orders to the codebase"; ≤72 chars, stands alone, blank
+  line, ~75-col body) unless the pr_style profile dictates otherwise
+- optimization PRs carry measured numbers with methodology and non-obvious
+  costs — "a 'faster' claim without a number is a hope, not a description"
+- diff budget gains the changed-lines norm (≲300; community consensus from
+  Slack/Graphite/Codacy on review speed) alongside the file budget
+
 ## [2.4.0] — 2026-11-18
 
 Learning round grounded in Anthropic's latest skill-authoring guidance and

@@ -180,3 +180,15 @@ def test_pr_template_declares_one_problem_per_pr():
     t = (Path(__file__).resolve().parent.parent / "assets" /
          "pull-request-template.md").read_text()
     assert "EXACTLY ONE problem per PR" in t
+    # PR-writing round (2026-11-18): kernel/Google rules operationalized at
+    # draft time, not just in doctrine
+    assert "imperative" in t and "72" in t
+    assert "Adapt, don't fill" in t and "Grounded, not invented" in t
+    assert "hope, not a description" in t  # optimization-numbers rule
+
+
+def test_pr_writing_rules_operationalized():
+    refs = Path(__file__).resolve().parent.parent / "references"
+    assert "giving orders to the codebase" in \
+        (refs / "maintainer-etiquette.md").read_text()  # kernel imperative rule
+    assert "≲300" in (refs / "patch-design.md").read_text()  # lines budget

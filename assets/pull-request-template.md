@@ -1,4 +1,7 @@
 # PR Draft — <title>
+<!-- title: imperative, ≤72 chars, stands alone ("Remove size limit on RPC freelist",
+     never "Deleting…" or "This PR removes…") — unless the pr_style profile shows the
+     project writes differently, then write like them -->
 
 > Prepared, never published, without explicit REMOTE_WRITE authorization from the user.
 > Follow the repository's own PR template if one exists (recon surfaces it); this draft
@@ -23,7 +26,9 @@
      expects it. EXACTLY ONE problem per PR: a second distinct problem found while
      working means a separate investigation and a separate PR — piling both into one
      review wastes maintainer time; if the diff grew because a second problem surfaced,
-     split before drafting. -->
+     split before drafting. Performance/optimization changes: measured numbers with
+     methodology AND the non-obvious costs — a "faster" claim without a number is a
+     hope, not a description (kernel rule). -->
 
 ## Root Cause
 <!-- the code-level cause; commit that introduced it if known (Fixes: <sha> where used) -->

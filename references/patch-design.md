@@ -37,6 +37,8 @@ For a small bug fix, prefer:
 
 - production files: 1–5
 - test files: 1–3
+- changed lines: ≲300 total (community norm — Slack engineering calls small PRs the
+  #1 way to speed up review; if far above, split or state the reason in the PR)
 - new dependencies: 0
 - unrelated refactors: 0
 - global formatting: 0
